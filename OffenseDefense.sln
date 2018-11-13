@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.27428.2043
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "OffenseDefense", "OffenseDefense\OffenseDefense.pyproj", "{471C9CC3-CAC2-4D12-A432-CFD9A9F84BDD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{471C9CC3-CAC2-4D12-A432-CFD9A9F84BDD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{471C9CC3-CAC2-4D12-A432-CFD9A9F84BDD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {162B3B49-A016-4D85-843F-FD2624328E0E}
+	EndGlobalSection
+EndGlobal
