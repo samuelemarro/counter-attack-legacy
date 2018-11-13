@@ -138,6 +138,7 @@
     <Content Include="pytorch_classification\utils\__pycache__\__init__.cpython-36.pyc" />
     <Content Include="pytorch_classification\__pycache__\cifar.cpython-36.pyc" />
     <Content Include="pytorch_classification\__pycache__\__init__.cpython-36.pyc" />
+    <Content Include="todo.md" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

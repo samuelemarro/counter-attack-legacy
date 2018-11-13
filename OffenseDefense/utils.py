@@ -53,7 +53,6 @@ def roc_curve(positive_values, negative_values):
 
     return false_positive_rate, true_positive_rate, thresholds
 
-#TODO: Controllare
 def get_best_threshold(true_positive_rates, false_positive_rates, thresholds):
     """
     Computes the best threshold, corresponding to the threshold with the maximum value of Youden's Index
@@ -89,7 +88,6 @@ def top_k_difference(x, k=2):
     return sorted_x[-1] - sorted_x[-k]
 
 class Filter(dict):
-    #TODO: Debug custom filters
     def __init__(self, o=None, custom_filters={}, **kwArgs):
         if o is None:
             o = {}

@@ -5,20 +5,6 @@ import torch
 import batch_processing
 import utils
 
-def run_attack(foolbox_model, attack, images, labels, workers=50):
-    assert len(images) == len(labels)
-    model_worker = ModelBatchWorker(foolbox_model._model)
-
-    input_queue = queue.Queue()
-    data = zip(images, labels)
-
-    attack_workers = [QueueAttackWorker(attack, foolbox_model, input_queue) for _ in range(workers)]
-
-    results = batch_processing.run_queue_threads(model_worker, attack_workers, input_queue, data)
-    
-    assert len(results) == len(images)
-
-    return results
 
 class ModelBatchWorker(batch_processing.BatchWorker):
     def __init__(self, model):
@@ -118,6 +104,21 @@ class ParallelPytorchModel(foolbox.models.PyTorchModel):
         return predictions, grad
 
 
+def run_attack(foolbox_model, attack, images, labels, workers=50):
+    assert len(images) == len(labels)
+    model_worker = ModelBatchWorker(foolbox_model._model)
+
+    input_queue = queue.Queue()
+    data = zip(images, labels)
+
+    attack_workers = [QueueAttackWorker(attack, foolbox_model, input_queue) for _ in range(workers)]
+
+    results = batch_processing.run_queue_threads(model_worker, attack_workers, input_queue, data)
+    
+    assert len(results) == len(images)
+
+    return results
+
 def get_adversarials(foolbox_model, images, labels, adversarial_attack, workers=50, adversarial_approximation_check=None):
     f = utils.Filter()
 
@@ -132,7 +133,7 @@ def get_adversarials(foolbox_model, images, labels, adversarial_attack, workers=
     print(len(correctly_classified))
     f.filter(correctly_classified, 'successful_classification')
 
-    f['adversarials'] = batch_attack.run_attack(foolbox_model, adversarial_attack, f['images'], f['image_labels'], workers=workers)
+    f['adversarials'] = run_attack(foolbox_model, adversarial_attack, f['images'], f['image_labels'], workers=workers)
     successful_adversarials = [i for i in range(len(f['adversarials'])) if f['adversarials'][i] is not None]
     f.filter(successful_adversarials, 'successful_adversarial')
     #Convert to Numpy array after the failed samples have been removed
@@ -148,14 +149,14 @@ def get_adversarials(foolbox_model, images, labels, adversarial_attack, workers=
     return f
 
 def get_anti_adversarials(foolbox_model, images, labels, adversarial_attack, anti_attack, workers=50, adversarial_approximation_check=1e-6, anti_approximation_check=None):
-    f = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_attack, workers, adversarial_approximation_check)
+    f = get_adversarials(foolbox_model, images, labels, adversarial_attack, workers, adversarial_approximation_check)
 
     print('Anti-Genuines')
-    f['anti_genuines'] = batch_attack.run_attack(foolbox_model, anti_attack, f['images'], f['image_labels'], workers=workers)
+    f['anti_genuines'] = run_attack(foolbox_model, anti_attack, f['images'], f['image_labels'], workers=workers)
     successful_anti_genuines = np.array([i for i in range(len(f['anti_genuines'])) if f['anti_genuines'][i] is not None], np.int32)
 
     print('Anti-Adversarials')
-    f['anti_adversarials'] = batch_attack.run_attack(foolbox_model, anti_attack, f['adversarials'], f['adversarial_labels'], workers=workers)
+    f['anti_adversarials'] = run_attack(foolbox_model, anti_attack, f['adversarials'], f['adversarial_labels'], workers=workers)
     successful_anti_adversarials = np.array([i for i in range(len(f['anti_adversarials'])) if f['anti_adversarials'][i] is not None], np.int32)
 
     successful_intersection = np.intersect1d(successful_anti_genuines, successful_anti_adversarials)

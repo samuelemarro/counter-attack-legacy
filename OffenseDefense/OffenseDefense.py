@@ -13,15 +13,6 @@ import batch_processing
 import batch_attack
 import queue
 
-#TODO:
-#-Verificare se l'errore dell'attacco è causato dal mio modello
-#-Testare "distribuzione distanze" e "confronta con distanza a proiezione"
-#-Modularizzare
-#-Risolvere Matplotlib non risponde
-#-Aumentare il numero di iterazioni
-#-Replace lp_distance with np.linalg.norm
-
-
 #NOTA: La precisione del floating point si traduce in un errore medio dello 0,01% (con punte dello 0,5%)
 #Questo errore può essere diminuito passando al double, ma è un suicidio computazionale perché raddoppia la
 #memoria richiesta e PyTorch è ottimizzato per float
@@ -30,8 +21,6 @@ import queue
 #talvolta genuina e talvolta avversariale. Ciò non è un problema per l'anti-attack (dopotutto non gli importa
 #la vera label), ma lo è per l'attack.
 
-
-#TODO: Why does it increase the distance? Is it the minus in perturbed = adversarial_image - gradient * self.epsilon?
 class FineTuningAttack(foolbox.attacks.Attack):
     def __init__(self, attack, p, epsilon=1e-6, max_steps=100):
         super().__init__(attack._default_model, attack._default_criterion, attack._default_distance, attack._default_threshold)
@@ -285,11 +274,6 @@ def basic_test(model, loader, adversarial_attack, anti_attack, p):
         images, labels = data
         images = images.numpy()
         labels = labels.numpy()
-
-        #TODO: How to handle failures?
-        #TODO: Does failed adversarial mean that we shouldn't run anti_genuine?
-        #TODO: PersistentAttack (tries the same attack with different epsilons until it succeeds)
-        #TODO: Get the label size
         
         original_count = len(images)
 
@@ -350,9 +334,6 @@ def approximation_test(model, loader, adversarial_anti_attack, distance_calculat
         images, labels = data
         images = images.numpy()
         labels = labels.numpy()
-
-        #TODO: How to handle failures?
-        #TODO: PersistentAttack (tries the same attack with different epsilons until it succeeds)
 
         #If requested, test using adversarial samples (which are close to the boundary)
         if adversarial_attack is not None:
