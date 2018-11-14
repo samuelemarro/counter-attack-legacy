@@ -1,50 +1,132 @@
-import progress
+import warnings
+import numpy as np
+import torch
+import foolbox
+import matplotlib.pyplot as plt
 import utils
+import batch_attack
 
-def model_accuracy(testloader, model, criterion, use_cuda):
-    batch_time = utils.AverageMeter()
-    data_time = utils.AverageMeter()
-    losses = utils.AverageMeter()
-    top1 = utils.AverageMeter()
-    top5 = utils.AverageMeter()
-
-    # switch to evaluate mode
+def basic_test(model, loader, adversarial_attack, anti_attack, p):
     model.eval()
+    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0, 1))
 
-    end = time.time()
-    bar = progress.Bar('Processing', max=len(testloader))
-    for batch_idx, (inputs, targets) in enumerate(testloader):
-        # measure data loading time
-        data_time.update(time.time() - end)
+    average_anti_genuine = utils.AverageMeter()
+    average_anti_adversarial = utils.AverageMeter()
+    average_adversarial = utils.AverageMeter()
 
-        if use_cuda:
-            inputs, targets = inputs.cuda(), targets.cuda()
-        inputs, targets = torch.autograd.Variable(inputs, volatile=True), torch.autograd.Variable(targets)
+    classification_rate = utils.AverageMeter()
+    adversarial_rate = utils.AverageMeter()
+    anti_rate = utils.AverageMeter()
 
-        # compute output
-        outputs = model(inputs)
-        loss = criterion(outputs, targets)
+    warnings.filterwarnings('error', 'Not running')
+    
+    for data in loader:
+        images, labels = data
+        images = images.numpy()
+        labels = labels.numpy()
+        
+        original_count = len(images)
 
-        # measure accuracy and record loss
-        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
-        losses.update(loss.data[0], inputs.size(0))
-        top1.update(prec1[0], inputs.size(0))
-        top5.update(prec5[0], inputs.size(0))
+        filter, anti_genuine_count, anti_adversarial_count = batch_attack.get_anti_adversarials(foolbox_model, images, labels, adversarial_attack, anti_attack)
 
-        # measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
+        images = filter['images']
+        labels = filter['image_labels']
+        adversarials = filter['adversarials']
+        anti_genuines = filter['anti_genuines']
+        anti_adversarials = filter['anti_adversarials']
+        classification_count = filter.filter_stats['successful_classification']
+        adversarial_count = filter.filter_stats['successful_adversarial']
 
-        # plot progress
-        bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(batch=batch_idx + 1,
-                    size=len(testloader),
-                    data=data_time.avg,
-                    bt=batch_time.avg,
-                    total=bar.elapsed_td,
-                    eta=bar.eta_td,
-                    loss=losses.avg,
-                    top1=top1.avg,
-                    top5=top5.avg,)
-        bar.next()
-    bar.finish()
-    return (top1.avg, top5.avg)
+        print(filter.filter_stats)
+        #print([np.average(x) for x in images])
+        #print([np.average(x) for x in adversarials])
+        #print([np.average(x) for x in anti_genuines])
+        #print([np.average(x) for x in anti_adversarials])
+
+        print(adversarials.shape[0])
+        print(anti_adversarials.shape[0])
+        print(anti_genuines.shape[0])
+
+        classification_rate.update(1, classification_count)
+        classification_rate.update(0, original_count - classification_count)
+        adversarial_rate.update(1, adversarial_count)
+        adversarial_rate.update(0, classification_count - adversarial_count)
+        anti_rate.update(1, anti_genuine_count)
+        anti_rate.update(1, anti_adversarial_count)
+        anti_rate.update(0, adversarial_count - anti_genuine_count)
+        anti_rate.update(0, adversarial_count - anti_adversarial_count)
+
+        #Compute the distances
+        adversarial_distances = utils.lp_distance(adversarials, images, p, True)
+        anti_adversarial_distances = utils.lp_distance(adversarials, anti_adversarials, p, True)
+        anti_genuine_distances = utils.lp_distance(images, anti_genuines, p, True)
+
+        #print('Distances:')
+        #print(adversarial_distances)
+
+        average_adversarial.update(np.sum(adversarial_distances), adversarial_distances.shape[0])
+        average_anti_adversarial.update(np.sum(anti_adversarial_distances), anti_adversarial_distances.shape[0])
+        average_anti_genuine.update(np.sum(anti_genuine_distances), anti_genuine_distances.shape[0])
+
+        print('Average Adversarial: {:2.2e}'.format(average_adversarial.avg))
+        print('Average Anti Adversarial: {:2.2e}'.format(average_anti_adversarial.avg))
+        print('Average Anti Genuine: {:2.2e}'.format(average_anti_genuine.avg))
+
+def approximation_test(model, loader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=None):
+    model.eval()
+    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0,1))
+
+    adversarial_distances = []
+    direction_distances = []
+    
+    for data in loader:
+        images, labels = data
+        images = images.numpy()
+        labels = labels.numpy()
+
+        #If requested, test using adversarial samples (which are close to the boundary)
+        if adversarial_attack is not None:
+            adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_attack)
+            images = adversarial_filter['adversarials']
+            labels = adversarial_filter['adversarial_labels']
+
+        anti_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_anti_attack)
+
+        closest_samples = []
+        for image, label in zip(anti_adversarial_filter['images'], anti_adversarial_filter['image_labels']):
+            closest_samples.append(distance_calculator.get_closest_sample(image, label, foolbox_model, foolbox.criteria.Misclassification(), p))
+        anti_adversarial_filter['closest_samples'] = closest_samples
+        successful_closest_samples = np.array([i for i in range(len(closest_samples)) if closest_samples[i] is not None], dtype=int)
+
+        anti_adversarial_filter.filter(successful_closest_samples, 'successful_closest_samples')
+        anti_adversarial_filter['closest_samples'] = np.array(anti_adversarial_filter['closest_samples'])
+        closest_samples = anti_adversarial_filter['closest_samples']
+
+        images = anti_adversarial_filter['images']
+        labels = anti_adversarial_filter['image_labels']
+        adversarials = anti_adversarial_filter['adversarials']
+
+        #Compute the distances
+        adversarial_distances += list(utils.lp_distance(adversarials, images, p, True))
+        direction_distances += list(utils.lp_distance(closest_samples, images, p, True))
+
+        ratios = np.array([adversarial / direction for adversarial, direction in zip(adversarial_distances, direction_distances)])
+
+        #visualisation.plot_histogram(np.array(adversarial_distances), 'blue')
+        #visualisation.plot_histogram(np.array(direction_distances), 'red')
+
+        average_adversarial_distance = np.average(np.array(adversarial_distances))
+        average_direction_distance = np.average(np.array(direction_distances))
+        average_ratio = np.average(ratios)
+
+        median_adversarial_distance = np.median(np.array(adversarial_distances))
+        median_direction_distance = np.median(np.array(direction_distances))
+        median_ratio = np.median(ratios)
+
+        print('Average Adversarial: {:2.2e}'.format(average_adversarial_distance))
+        print('Average Direction: {:2.2e}'.format(average_direction_distance))
+        print('Average Ratio: {:2.2e}'.format(average_ratio))
+        print()
+        print('Median Adversarial: {:2.2e}'.format(median_adversarial_distance))
+        print('Median Direction: {:2.2e}'.format(median_direction_distance))
+        print('Median Ratio: {:2.2e}'.format(median_ratio))
