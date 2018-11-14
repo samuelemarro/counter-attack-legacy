@@ -89,7 +89,6 @@ def _parallel_thread_function(pooler, thread_worker, output_queue):
 
 def run_queue_threads(batch_worker, thread_workers, input_queue, data):
     pooler = BatchPooler(batch_worker)
-    final_outputs = []
     threads = []
 
     output_queue = queue.Queue()
@@ -98,7 +97,8 @@ def run_queue_threads(batch_worker, thread_workers, input_queue, data):
         input_queue.put((i, data_entry))
 
     for thread_worker in thread_workers:
-        thread = threading.Thread(target=_parallel_thread_function, args=(pooler, thread_worker, output_queue))
+        thread = threading.Thread(target=_parallel_thread_function,
+                                  args=(pooler, thread_worker, output_queue))
 
         threads.append(thread)
         thread.start()

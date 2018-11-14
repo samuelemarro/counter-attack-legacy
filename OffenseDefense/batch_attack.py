@@ -1,13 +1,14 @@
+import queue
 import numpy as np
 import foolbox
-import queue
 import torch
 import batch_processing
 import utils
-
+import torch
 
 class ModelBatchWorker(batch_processing.BatchWorker):
     def __init__(self, model):
+        super().__init__()
         self.model = model
     def __call__(self, inputs):
         images = [x[0] for x in inputs]
@@ -16,9 +17,9 @@ class ModelBatchWorker(batch_processing.BatchWorker):
         images = torch.stack(images)
         outputs = self.model(images)
 
-        ce = torch.nn.CrossEntropyLoss()
-        
-        losses = [ce(torch.unsqueeze(outputs[i], 0), targets[i]) for i in range(outputs.shape[0])] #torch.split(torch.sum(outputs, dim=1), 1)
+        cross_entropy = torch.nn.CrossEntropyLoss()
+
+        losses = [cross_entropy(torch.unsqueeze(outputs[i], 0), targets[i]) for i in range(outputs.shape[0])]
         grads = torch.autograd.grad(losses, images)[0]
         #print(grads)
 
@@ -34,7 +35,13 @@ class QueueAttackWorker(batch_processing.ThreadWorker):
         self.input_queue = input_queue
 
     def __call__(self, pooler, return_queue):
-        wrapped_model = ParallelPytorchModel(pooler, self.model._model, self.model.bounds(), self.model.num_classes(), self.model.channel_axis(), self.model.device, self.model._preprocessing)
+        wrapped_model = ParallelPytorchModel(pooler,
+                                             self.model._model,
+                                             self.model.bounds(),
+                                             self.model.num_classes(),
+                                             self.model.channel_axis(),
+                                             self.model.device,
+                                             self.model._preprocessing)
         while True:
             try:
                 i, (image, label) = self.input_queue.get(timeout=1e-2)
@@ -59,9 +66,6 @@ class ParallelPytorchModel(foolbox.models.PyTorchModel):
         self.pooler = pooler
 
     def predictions_and_gradient(self, image, label):
-        # lazy import
-        import torch
-        import torch.nn as nn
         if self._old_pytorch():  # pragma: no cover
             from torch.autograd import Variable
 
@@ -144,7 +148,7 @@ def get_adversarials(foolbox_model, images, labels, adversarial_attack, workers=
 
     if adversarial_approximation_check is not None:
         for x in f['adversarial_predictions']:
-            assert utils.utils.top_k_difference(x, 2) > adversarial_approximation_check
+            assert utils.top_k_difference(x, 2) > adversarial_approximation_check
 
     return f
 

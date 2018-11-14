@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import visualisation
 import model_tools
 from pytorch_classification.models.cifar.densenet import DenseNet
-import detectors
 import traceback
 import batch_processing
 import batch_attack
@@ -47,8 +46,6 @@ class FineTuningAttack(foolbox.attacks.Attack):
         previous_image = np.copy(adversarial_image)
         previous_distance = utils.lp_distance(original_image, adversarial_image, self.p)
 
-        #print('Called')
-
         i = 0
         while i < self.max_steps:
             predictions, gradient = model.predictions_and_gradient(adversarial_image, adversarial_label)
@@ -61,7 +58,6 @@ class FineTuningAttack(foolbox.attacks.Attack):
             perturbed = np.clip(perturbed, min_, max_)
 
             perturbed_distance = utils.lp_distance(original_image, perturbed, self.p)
-            #print('{} {}'.format(previous_distance, perturbed_distance))
 
             if criterion.is_adversarial(predictions, label) and perturbed_distance < previous_distance:
                 previous_image = perturbed
@@ -100,65 +96,62 @@ class BoundaryDistanceCalculator:
             outputs += list(model.batch_predictions(subsection.astype(np.float32)))
         return np.array(outputs)
 
-    def get_closest_sample(self, image, label, model, criterion):
+    def _get_successful_adversarials(self, model, criterion, image, label, vectors, magnitude):
+        potential_adversarials = np.clip(vectors * magnitude + image, self.bound_min, self.bound_max).astype(np.float32)
+        adversarial_predictions = self._safe_batch_predictions(model, potential_adversarials, n=50)
+        successful_adversarial_indices = np.array([i for i in range(len(potential_adversarials)) if criterion.is_adversarial(adversarial_predictions[i], label)]).astype(int)
+        return potential_adversarials[successful_adversarial_indices], vectors[successful_adversarial_indices]
+
+    def get_closest_sample(self, image, label, model, criterion, p):
         vectors = [self._random_directions(image.size) for i in range(self.directions)]
-        #print(utils.lp_distance(vectors[0], 0, 2))
         vectors = [np.reshape(vector, list(image.shape)) for vector in vectors]
-        #print(utils.lp_distance(vectors[0], 0, 2))
         vectors = np.array(vectors)
-        #assert utils.lp_distance(vectors[0], 0, 2) == 1
 
         #First, find the closest samples that are adversarials
-        magnitude = self.search_epsilon
+        search_magnitude = self.search_epsilon
         best_adversarial = None
-        valid_adversarials = []
 
         for _ in range(self.search_steps):
-            potential_adversarials = np.clip(vectors * magnitude + image, self.bound_min, self.bound_max).astype(np.float32)
-            adversarial_predictions = self._safe_batch_predictions(model, potential_adversarials, n=50)
-            #print(np.min(np.array([top2_difference(adversarial_prediction) for adversarial_prediction in adversarial_predictions])))
-            successful_adversarials = np.array([i for i in range(len(potential_adversarials)) if criterion.is_adversarial(adversarial_predictions[i], label)])
+            successful_adversarials, successful_vectors = self._get_successful_adversarials(model, criterion, image, label, vectors, search_magnitude)
 
-            #print(magnitude)
             #The first samples to cross the boundary are the potential candidates, so we drop the rest
             if len(successful_adversarials) > 0:
-                print('Found {} successful adversarials with magnitude {}'.format(len(successful_adversarials), magnitude))
-                vectors = vectors[successful_adversarials]
-                valid_adversarials = potential_adversarials[successful_adversarials]
+                print('Found {} successful adversarials with search magnitude {}'.format(len(successful_adversarials), search_magnitude))
+                vectors = successful_vectors
+
+                best_adversarial_index = np.argmin(utils.lp_distance(successful_adversarials, image, p, True))
+                best_adversarial = successful_adversarials[best_adversarial_index]
                 break
 
-            magnitude += self.search_epsilon
+            search_magnitude += self.search_epsilon
         
-        if len(valid_adversarials) == 0:
+        if len(successful_adversarials) == 0:
             print('Couldn\'t find an adversarial sample')
             return None
 
-        best_adversarial = valid_adversarials[np.random.randint(0, len(valid_adversarials))]
-
         #Finetuning: Use binary search to find the distance with high precision
-        #If no sample is adversarial, we have to increase the magnitude. If at least one sample is adversarial, drop the others
-        min_ = magnitude - self.search_epsilon
-        max_ = magnitude
+        #If no sample is adversarial, we have to increase the finetuning magnitude. If at least one sample is adversarial, drop the others
+        min_ = search_magnitude - self.search_epsilon
+        max_ = search_magnitude
 
         while (max_ - min_) > self.finetuning_precision:
-            middle_magnitude = (max_ + min_) / 2
+            finetuning_magnitude = (max_ + min_) / 2
 
-            potential_adversarials = np.clip(vectors * middle_magnitude + image, self.bound_min, self.bound_max).astype(np.float32)
-            adversarial_predictions = self._safe_batch_predictions(model, potential_adversarials, n=50)
-            successful_adversarials = np.array([i for i in range(len(potential_adversarials)) if criterion.is_adversarial(adversarial_predictions[i], label)])
+            successful_adversarials, successful_vectors = self._get_successful_adversarials(model, criterion, image, label, vectors, finetuning_magnitude)
 
             if len(successful_adversarials) == 0:
-                min_ = middle_magnitude
+                min_ = finetuning_magnitude
             else:
-                max_ = middle_magnitude
-                valid_adversarials = potential_adversarials[successful_adversarials]
-                best_adversarial = valid_adversarials[np.random.randint(0, len(valid_adversarials))]
-                vectors = vectors[successful_adversarials]
+                max_ = finetuning_magnitude
 
-        if best_adversarial is None:
-            print('Finetuning screwed up!')
-        else:
-            print('Went from magnitude {} to {}'.format(magnitude, middle_magnitude))
+                best_adversarial_index = np.argmin(utils.lp_distance(successful_adversarials, image, p, True))
+                best_adversarial = successful_adversarials[best_adversarial_index]
+                vectors = successful_vectors
+
+        assert best_adversarial is not None
+
+        print('Finetuned from magnitude {} to {}'.format(search_magnitude, finetuning_magnitude))
+
         return best_adversarial
 
 
@@ -307,9 +300,9 @@ def basic_test(model, loader, adversarial_attack, anti_attack, p):
         anti_rate.update(0, adversarial_count - anti_adversarial_count)
 
         #Compute the distances
-        adversarial_distances = utils.lp_distance(adversarials, images, p, batch=True)
-        anti_adversarial_distances = utils.lp_distance(adversarials, anti_adversarials, p, batch=True)
-        anti_genuine_distances = utils.lp_distance(images, anti_genuines, p, batch=True)
+        adversarial_distances = utils.lp_distance(adversarials, images, p, True)
+        anti_adversarial_distances = utils.lp_distance(adversarials, anti_adversarials, p, True)
+        anti_genuine_distances = utils.lp_distance(images, anti_genuines, p, True)
 
         #print('Distances:')
         #print(adversarial_distances)
@@ -345,7 +338,7 @@ def approximation_test(model, loader, adversarial_anti_attack, distance_calculat
 
         closest_samples = []
         for image, label in zip(f_adversarial['images'], f_adversarial['image_labels']):
-            closest_samples.append(distance_calculator.get_closest_sample(image, label, foolbox_model, foolbox.criteria.Misclassification()))
+            closest_samples.append(distance_calculator.get_closest_sample(image, label, foolbox_model, foolbox.criteria.Misclassification(), p))
         f_adversarial['closest_samples'] = closest_samples
         successful_closest_samples = np.array([i for i in range(len(closest_samples)) if closest_samples[i] is not None], dtype=int)
 
@@ -358,8 +351,8 @@ def approximation_test(model, loader, adversarial_anti_attack, distance_calculat
         adversarials = f_adversarial['adversarials']
 
         #Compute the distances
-        adversarial_distances += list(utils.lp_distance(adversarials, images, p, batch=True))
-        direction_distances += list(utils.lp_distance(closest_samples, images, p, batch=True))
+        adversarial_distances += list(utils.lp_distance(adversarials, images, p, True))
+        direction_distances += list(utils.lp_distance(closest_samples, images, p, True))
 
         ratios = np.array([adversarial / direction for adversarial, direction in zip(adversarial_distances, direction_distances)])
 
@@ -375,7 +368,8 @@ def approximation_test(model, loader, adversarial_anti_attack, distance_calculat
         print('Median Ratio: {:2.2e}'.format(median_ratio))
 
 def batch_main():
-    trainloader, testloader = model_tools.get_cifar10_loaders(1, 10, 10, shuffle_test=True)
+    trainloader = model_tools.cifar10_trainloader(1, 10, flip=False, crop=False, normalize=False, shuffle=True)
+    testloader = model_tools.cifar10_testloader(1, 10, normalize=False, shuffle=False)
 
     model = prepare_model()
     model.eval()

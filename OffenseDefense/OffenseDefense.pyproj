@@ -27,16 +27,10 @@
     <Compile Include="batch_processing.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="detectors.py">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="model_tools.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="OffenseDefense.py" />
-    <Compile Include="old.py">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="pytorch_classification\cifar.py" />
     <Compile Include="pytorch_classification\imagenet.py" />
     <Compile Include="pytorch_classification\models\cifar\alexnet.py" />
@@ -67,8 +61,6 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="data\" />
-    <Folder Include="data\cifar-10-batches-py\" />
     <Folder Include="pytorch_classification\" />
     <Folder Include="pytorch_classification\checkpoints\" />
     <Folder Include="pytorch_classification\checkpoints\cifar10\" />
@@ -89,16 +81,6 @@
     <Folder Include="pytorch_classification\__pycache__\" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="data\cifar-10-batches-py\batches.meta" />
-    <Content Include="data\cifar-10-batches-py\data_batch_1" />
-    <Content Include="data\cifar-10-batches-py\data_batch_2" />
-    <Content Include="data\cifar-10-batches-py\data_batch_3" />
-    <Content Include="data\cifar-10-batches-py\data_batch_4" />
-    <Content Include="data\cifar-10-batches-py\data_batch_5" />
-    <Content Include="data\cifar-10-batches-py\readme.html" />
-    <Content Include="data\cifar-10-batches-py\test_batch" />
-    <Content Include="data\cifar-10-python.tar.gz" />
-    <Content Include="data\cifar10-fgsm-densenet100-12-train.zip" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\checkpoint.pth.tar" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\log.eps" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\log.txt" />

@@ -68,9 +68,16 @@ def get_best_threshold(true_positive_rates, false_positive_rates, thresholds):
     best_threshold_index = np.argmax(youden_indices, 0)
     return thresholds[best_threshold_index].item(), true_positive_rates[best_threshold_index].item(), false_positive_rates[best_threshold_index].item()
 
-def lp_distance(x, y, p, batch=False):
+"""
+Computes the L_p distance between two points. Works with rank 3 matrices and batches,
+unlike numpy.linanlg.norm
+"""
+def lp_distance(x, y, p, batch, broadcast=True):
     if p < 0:
         raise ValueError('p must be positive')
+
+    if broadcast:
+        x, y = np.broadcast_arrays(x, y)
 
     def single_image(_x, _y):
         if np.isinf(p):
