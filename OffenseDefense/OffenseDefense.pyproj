@@ -31,25 +31,6 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="OffenseDefense.py" />
-    <Compile Include="pytorch_classification\cifar.py" />
-    <Compile Include="pytorch_classification\imagenet.py" />
-    <Compile Include="pytorch_classification\models\cifar\alexnet.py" />
-    <Compile Include="pytorch_classification\models\cifar\densenet.py" />
-    <Compile Include="pytorch_classification\models\cifar\preresnet.py" />
-    <Compile Include="pytorch_classification\models\cifar\resnet.py" />
-    <Compile Include="pytorch_classification\models\cifar\resnext.py" />
-    <Compile Include="pytorch_classification\models\cifar\vgg.py" />
-    <Compile Include="pytorch_classification\models\cifar\wrn.py" />
-    <Compile Include="pytorch_classification\models\cifar\__init__.py" />
-    <Compile Include="pytorch_classification\models\imagenet\resnext.py" />
-    <Compile Include="pytorch_classification\models\imagenet\__init__.py" />
-    <Compile Include="pytorch_classification\models\__init__.py" />
-    <Compile Include="pytorch_classification\utils\eval.py" />
-    <Compile Include="pytorch_classification\utils\logger.py" />
-    <Compile Include="pytorch_classification\utils\misc.py" />
-    <Compile Include="pytorch_classification\utils\visualize.py" />
-    <Compile Include="pytorch_classification\utils\__init__.py" />
-    <Compile Include="pytorch_classification\__init__.py" />
     <Compile Include="tests.py">
       <SubType>Code</SubType>
     </Compile>
@@ -61,65 +42,7 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="pytorch_classification\" />
-    <Folder Include="pytorch_classification\checkpoints\" />
-    <Folder Include="pytorch_classification\checkpoints\cifar10\" />
-    <Folder Include="pytorch_classification\checkpoints\cifar10\alexnet\" />
-    <Folder Include="pytorch_classification\checkpoints\cifar10\resnet-110\" />
-    <Folder Include="pytorch_classification\checkpoints\cifar10\vgg19_bn\" />
-    <Folder Include="pytorch_classification\data\" />
-    <Folder Include="pytorch_classification\data\cifar-10-batches-py\" />
-    <Folder Include="pytorch_classification\models\" />
-    <Folder Include="pytorch_classification\models\cifar\" />
-    <Folder Include="pytorch_classification\models\cifar\__pycache__\" />
-    <Folder Include="pytorch_classification\models\imagenet\" />
-    <Folder Include="pytorch_classification\models\__pycache__\" />
-    <Folder Include="pytorch_classification\utils\" />
-    <Folder Include="pytorch_classification\utils\images\" />
-    <Folder Include="pytorch_classification\utils\progress\" />
-    <Folder Include="pytorch_classification\utils\__pycache__\" />
-    <Folder Include="pytorch_classification\__pycache__\" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\checkpoint.pth.tar" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\log.eps" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\log.txt" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\model_best.pth.tar" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\resnet-110\checkpoint.pth.tar" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\resnet-110\log.txt" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\resnet-110\model_best.pth.tar" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\vgg19_bn\checkpoint.pth.tar" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\vgg19_bn\log.txt" />
-    <Content Include="pytorch_classification\checkpoints\cifar10\vgg19_bn\model_best.pth.tar" />
-    <Content Include="pytorch_classification\data\cifar-10-batches-py\batches.meta" />
-    <Content Include="pytorch_classification\data\cifar-10-batches-py\data_batch_1" />
-    <Content Include="pytorch_classification\data\cifar-10-batches-py\data_batch_2" />
-    <Content Include="pytorch_classification\data\cifar-10-batches-py\data_batch_3" />
-    <Content Include="pytorch_classification\data\cifar-10-batches-py\data_batch_4" />
-    <Content Include="pytorch_classification\data\cifar-10-batches-py\data_batch_5" />
-    <Content Include="pytorch_classification\data\cifar-10-batches-py\readme.html" />
-    <Content Include="pytorch_classification\data\cifar-10-batches-py\test_batch" />
-    <Content Include="pytorch_classification\data\cifar-10-python.tar.gz" />
-    <Content Include="pytorch_classification\models\cifar\__pycache__\alexnet.cpython-36.pyc" />
-    <Content Include="pytorch_classification\models\cifar\__pycache__\densenet.cpython-36.pyc" />
-    <Content Include="pytorch_classification\models\cifar\__pycache__\preresnet.cpython-36.pyc" />
-    <Content Include="pytorch_classification\models\cifar\__pycache__\resnet.cpython-36.pyc" />
-    <Content Include="pytorch_classification\models\cifar\__pycache__\resnext.cpython-36.pyc" />
-    <Content Include="pytorch_classification\models\cifar\__pycache__\vgg.cpython-36.pyc" />
-    <Content Include="pytorch_classification\models\cifar\__pycache__\wrn.cpython-36.pyc" />
-    <Content Include="pytorch_classification\models\cifar\__pycache__\__init__.cpython-36.pyc" />
-    <Content Include="pytorch_classification\models\__pycache__\__init__.cpython-36.pyc" />
-    <Content Include="pytorch_classification\README.md" />
-    <Content Include="pytorch_classification\TRAINING.md" />
-    <Content Include="pytorch_classification\utils\images\cifar.png" />
-    <Content Include="pytorch_classification\utils\images\imagenet.png" />
-    <Content Include="pytorch_classification\utils\__pycache__\eval.cpython-36.pyc" />
-    <Content Include="pytorch_classification\utils\__pycache__\logger.cpython-36.pyc" />
-    <Content Include="pytorch_classification\utils\__pycache__\misc.cpython-36.pyc" />
-    <Content Include="pytorch_classification\utils\__pycache__\visualize.cpython-36.pyc" />
-    <Content Include="pytorch_classification\utils\__pycache__\__init__.cpython-36.pyc" />
-    <Content Include="pytorch_classification\__pycache__\cifar.cpython-36.pyc" />
-    <Content Include="pytorch_classification\__pycache__\__init__.cpython-36.pyc" />
+    <Content Include="test_configurations.md" />
     <Content Include="todo.md" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />

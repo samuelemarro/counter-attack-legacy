@@ -1,7 +1,6 @@
 import queue
 import numpy as np
 import foolbox
-import torch
 import batch_processing
 import utils
 import torch
@@ -45,12 +44,17 @@ class QueueAttackWorker(batch_processing.ThreadWorker):
         while True:
             try:
                 i, (image, label) = self.input_queue.get(timeout=1e-2)
-                adversarial = foolbox.Adversarial(wrapped_model, self.attack._default_criterion, image, label, self.attack._default_distance, self.attack._default_threshold)
+                adversarial = foolbox.Adversarial(wrapped_model,
+                                                  self.attack._default_criterion,
+                                                  image,
+                                                  label,
+                                                  self.attack._default_distance,
+                                                  self.attack._default_threshold)
                 adversarial_image = self.attack(adversarial)
-                #print('Inserting Adversarial')
+
                 return_queue.put((i, adversarial_image))
             except queue.Empty:
-                #print('Found empty')
+                #No more inputs, we can stop
                 return
 
 class ParallelPytorchModel(foolbox.models.PyTorchModel):
@@ -123,66 +127,88 @@ def run_attack(foolbox_model, attack, images, labels, workers=50):
 
     return results
 
-def get_adversarials(foolbox_model, images, labels, adversarial_attack, workers=50, adversarial_approximation_check=None):
-    f = utils.Filter()
+def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
+                     images : np.ndarray,
+                     labels : np.ndarray,
+                     adversarial_attack : foolbox.attacks.Attack,
+                     workers: int = 50,
+                     adversarial_approximation_threshold: float = None):
+    filter = utils.Filter()
 
-    f['images'] = images
-    f['ground_truth_labels'] = labels
+    filter['images'] = images
+    filter['ground_truth_labels'] = labels
 
-    f['image_predictions'] = foolbox_model.batch_predictions(f['images'])
-    f['image_labels'] = np.argmax(f['image_predictions'], axis=-1)
-    correctly_classified = np.nonzero(np.equal(f['image_labels'], f['ground_truth_labels']))[0]
+    filter['image_predictions'] = foolbox_model.batch_predictions(filter['images'])
+    filter['image_labels'] = np.argmax(filter['image_predictions'], axis=-1)
+    correctly_classified = np.nonzero(np.equal(filter['image_labels'],
+                                               filter['ground_truth_labels']))[0]
     print(correctly_classified)
     print(correctly_classified.shape)
     print(len(correctly_classified))
-    f.filter(correctly_classified, 'successful_classification')
+    filter.filter(correctly_classified, 'successful_classification')
 
-    f['adversarials'] = run_attack(foolbox_model, adversarial_attack, f['images'], f['image_labels'], workers=workers)
-    successful_adversarials = [i for i in range(len(f['adversarials'])) if f['adversarials'][i] is not None]
-    f.filter(successful_adversarials, 'successful_adversarial')
+    filter['adversarials'] = run_attack(foolbox_model,
+                                        adversarial_attack,
+                                        filter['images'],
+                                        filter['image_labels'],
+                                        workers=workers)
+    successful_adversarials = [i for i in range(len(filter['adversarials'])) if filter['adversarials'][i] is not None]
+    filter.filter(successful_adversarials, 'successful_adversarial')
     #Convert to Numpy array after the failed samples have been removed
-    f['adversarials'] = np.array(f['adversarials'])
+    filter['adversarials'] = np.array(filter['adversarials'])
 
-    f['adversarial_predictions'] = foolbox_model.batch_predictions(f['adversarials'])
-    f['adversarial_labels'] = np.argmax(f['adversarial_predictions'], axis=-1)
+    filter['adversarial_predictions'] = foolbox_model.batch_predictions(filter['adversarials'])
+    filter['adversarial_labels'] = np.argmax(filter['adversarial_predictions'], axis=-1)
 
-    if adversarial_approximation_check is not None:
-        for x in f['adversarial_predictions']:
-            assert utils.top_k_difference(x, 2) > adversarial_approximation_check
+    if adversarial_approximation_threshold is not None:
+        for x in filter['adversarial_predictions']:
+            assert utils.top_k_difference(x, 2) > adversarial_approximation_threshold
 
-    return f
+    return filter
 
-def get_anti_adversarials(foolbox_model, images, labels, adversarial_attack, anti_attack, workers=50, adversarial_approximation_check=1e-6, anti_approximation_check=None):
-    f = get_adversarials(foolbox_model, images, labels, adversarial_attack, workers, adversarial_approximation_check)
+def get_anti_adversarials(foolbox_model : foolbox.models.PyTorchModel,
+                          images : np.ndarray,
+                          labels : np.ndarray,
+                          adversarial_attack : foolbox.attacks.Attack,
+                          anti_attack : foolbox.attacks.Attack,
+                          workers=50,
+                          adversarial_approximation_threshold : float = 1e-6,
+                          anti_adversarial_approximation_threshold : float = None):
+    filter = get_adversarials(foolbox_model,
+                              images,
+                              labels,
+                              adversarial_attack,
+                              workers,
+                              adversarial_approximation_threshold)
 
     print('Anti-Genuines')
-    f['anti_genuines'] = run_attack(foolbox_model, anti_attack, f['images'], f['image_labels'], workers=workers)
-    successful_anti_genuines = np.array([i for i in range(len(f['anti_genuines'])) if f['anti_genuines'][i] is not None], np.int32)
+    filter['anti_genuines'] = run_attack(foolbox_model, anti_attack, filter['images'], filter['image_labels'], workers=workers)
+    successful_anti_genuines = np.array([i for i in range(len(filter['anti_genuines'])) if filter['anti_genuines'][i] is not None], np.int32)
 
     print('Anti-Adversarials')
-    f['anti_adversarials'] = run_attack(foolbox_model, anti_attack, f['adversarials'], f['adversarial_labels'], workers=workers)
-    successful_anti_adversarials = np.array([i for i in range(len(f['anti_adversarials'])) if f['anti_adversarials'][i] is not None], np.int32)
+    filter['anti_adversarials'] = run_attack(foolbox_model, anti_attack, filter['adversarials'], filter['adversarial_labels'], workers=workers)
+    successful_anti_adversarials = np.array([i for i in range(len(filter['anti_adversarials'])) if filter['anti_adversarials'][i] is not None], np.int32)
 
     successful_intersection = np.intersect1d(successful_anti_genuines, successful_anti_adversarials)
-    f.filter(successful_intersection, 'successful_intersection')
+    filter.filter(successful_intersection, 'successful_intersection')
 
     #Convert to Numpy array after the failed samples have been removed
-    f['anti_genuines'] = np.array(f['anti_genuines'])
-    f['anti_adversarials'] = np.array(f['anti_adversarials'])
+    filter['anti_genuines'] = np.array(filter['anti_genuines'])
+    filter['anti_adversarials'] = np.array(filter['anti_adversarials'])
 
-    f['anti_genuine_predictions'] = foolbox_model.batch_predictions(f['anti_genuines'])
-    f['anti_genuine_labels'] = np.argmax(f['anti_genuine_predictions'], axis=-1)
-    f['anti_adversarial_predictions'] = foolbox_model.batch_predictions(f['anti_adversarials'])
-    f['anti_adversarial_labels'] = np.argmax(f['anti_adversarial_predictions'], axis=-1)
+    filter['anti_genuine_predictions'] = foolbox_model.batch_predictions(filter['anti_genuines'])
+    filter['anti_genuine_labels'] = np.argmax(filter['anti_genuine_predictions'], axis=-1)
+    filter['anti_adversarial_predictions'] = foolbox_model.batch_predictions(filter['anti_adversarials'])
+    filter['anti_adversarial_labels'] = np.argmax(filter['anti_adversarial_predictions'], axis=-1)
 
     #These asserts fail only when the samples are so close to the boundary that the
     #nondeterministic approximations by CUDA cause a difference in predictions (around 1e-6)
     #that causes the top class to be different. Since this doesn't concern us (we only want to
     #estimate the distance), we default to not checking
-    if anti_approximation_check is not None:
-        for x in f['anti_genuine_predictions']:
-            assert utils.top_k_difference(x, 2) > adversarial_approximation_check
-        for x in f['anti_adversarial_predictions']:
-            assert utils.top_k_difference(x, 2) > adversarial_approximation_check
+    if anti_adversarial_approximation_threshold is not None:
+        for x in filter['anti_genuine_predictions']:
+            assert utils.top_k_difference(x, 2) > adversarial_approximation_threshold
+        for x in filter['anti_adversarial_predictions']:
+            assert utils.top_k_difference(x, 2) > adversarial_approximation_threshold
 
-    return f, len(successful_anti_genuines), len(successful_anti_adversarials)
+    return filter, len(successful_anti_genuines), len(successful_anti_adversarials)

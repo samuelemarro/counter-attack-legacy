@@ -22,7 +22,10 @@ import queue
 
 class FineTuningAttack(foolbox.attacks.Attack):
     def __init__(self, attack, p, epsilon=1e-6, max_steps=100):
-        super().__init__(attack._default_model, attack._default_criterion, attack._default_distance, attack._default_threshold)
+        super().__init__(attack._default_model,
+                         attack._default_criterion,
+                         attack._default_distance,
+                         attack._default_threshold)
         self.attack = attack
         self.p = p
         self.epsilon = epsilon
@@ -30,18 +33,18 @@ class FineTuningAttack(foolbox.attacks.Attack):
 
     @foolbox.attacks.base.call_decorator
     def __call__(self, input_or_adv, label = None, unpack = True, **kwargs):
-        a = self.attack(input_or_adv, label, False, **kwargs)
-        min_, max_ = a.bounds()
-        model = a._model
+        foolbox_adversarial = self.attack(input_or_adv, label, False, **kwargs)
+        min_, max_ = foolbox_adversarial.bounds()
+        model = foolbox_adversarial._model
         
-        criterion = a._criterion
-        original_image = a.original_image
-        adversarial_image = a.image
+        criterion = foolbox_adversarial._criterion
+        original_image = foolbox_adversarial.original_image
+        adversarial_image = foolbox_adversarial.image
         
         if adversarial_image is None:
             return
 
-        adversarial_label = a.adversarial_class
+        adversarial_label = foolbox_adversarial.adversarial_class
 
         previous_image = np.copy(adversarial_image)
         previous_distance = utils.lp_distance(original_image, adversarial_image, self.p)
@@ -161,7 +164,8 @@ def prepare_model():
     model = nn.DataParallel(model)
     model_tools.load_model(model, './pretrained_models/cifar10/densenet-bc-100-12/model_best.pth.tar')
     model = model.module
-    model = nn.Sequential(model_tools.Preprocessing(means=(0.4914, 0.4822, 0.4465), stds=(0.2023, 0.1994, 0.2010)), model)
+    model = nn.Sequential(model_tools.Preprocessing(means=(0.4914, 0.4822, 0.4465),
+                                                    stds=(0.2023, 0.1994, 0.2010)), model)
     model.eval()
 
     return model
@@ -201,7 +205,7 @@ class TargetTop2Difference(foolbox.criteria.Criterion):
 
 def image_test(model, loader, adversarial_attack, anti_attack):
     model.eval()
-    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0,1))
+    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0, 1))
     
     plt.ion()
     for i, data in enumerate(loader):
@@ -230,7 +234,6 @@ def image_test(model, loader, adversarial_attack, anti_attack):
             adversarial = adversarials[j]
             anti_adversarial = anti_adversarials[j]
             anti_genuine = anti_genuines[j]
-            label = labels[j]
 
             subfigures[j, 0].imshow(image)
             subfigures[j, 0].axis('off')
@@ -250,7 +253,7 @@ def image_test(model, loader, adversarial_attack, anti_attack):
 
 def basic_test(model, loader, adversarial_attack, anti_attack, p):
     model.eval()
-    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0,1))
+    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0, 1))
 
     average_anti_genuine = utils.AverageMeter()
     average_anti_adversarial = utils.AverageMeter()
@@ -330,25 +333,25 @@ def approximation_test(model, loader, adversarial_anti_attack, distance_calculat
 
         #If requested, test using adversarial samples (which are close to the boundary)
         if adversarial_attack is not None:
-            f = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_attack)
-            images = f['adversarials']
-            labels = f['adversarial_labels']
+            adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_attack)
+            images = adversarial_filter['adversarials']
+            labels = adversarial_filter['adversarial_labels']
 
-        f_adversarial = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_anti_attack)
+        anti_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_anti_attack)
 
         closest_samples = []
-        for image, label in zip(f_adversarial['images'], f_adversarial['image_labels']):
+        for image, label in zip(anti_adversarial_filter['images'], anti_adversarial_filter['image_labels']):
             closest_samples.append(distance_calculator.get_closest_sample(image, label, foolbox_model, foolbox.criteria.Misclassification(), p))
-        f_adversarial['closest_samples'] = closest_samples
+        anti_adversarial_filter['closest_samples'] = closest_samples
         successful_closest_samples = np.array([i for i in range(len(closest_samples)) if closest_samples[i] is not None], dtype=int)
 
-        f_adversarial.filter(successful_closest_samples, 'successful_closest_samples')
-        f_adversarial['closest_samples'] = np.array(f_adversarial['closest_samples'])
-        closest_samples = f_adversarial['closest_samples']
+        anti_adversarial_filter.filter(successful_closest_samples, 'successful_closest_samples')
+        anti_adversarial_filter['closest_samples'] = np.array(anti_adversarial_filter['closest_samples'])
+        closest_samples = anti_adversarial_filter['closest_samples']
 
-        images = f_adversarial['images']
-        labels = f_adversarial['image_labels']
-        adversarials = f_adversarial['adversarials']
+        images = anti_adversarial_filter['images']
+        labels = anti_adversarial_filter['image_labels']
+        adversarials = anti_adversarial_filter['adversarials']
 
         #Compute the distances
         adversarial_distances += list(utils.lp_distance(adversarials, images, p, True))
@@ -359,17 +362,25 @@ def approximation_test(model, loader, adversarial_anti_attack, distance_calculat
         visualisation.plot_histogram(np.array(adversarial_distances), 'blue')
         visualisation.plot_histogram(np.array(direction_distances), 'red')
 
+        average_adversarial_distance = np.average(np.array(adversarial_distances))
+        average_direction_distance = np.average(np.array(direction_distances))
+        average_ratio = np.average(ratios)
+
         median_adversarial_distance = np.median(np.array(adversarial_distances))
         median_direction_distance = np.median(np.array(direction_distances))
         median_ratio = np.median(ratios)
 
+        print('Average Adversarial: {:2.2e}'.format(average_adversarial_distance))
+        print('Average Direction: {:2.2e}'.format(average_direction_distance))
+        print('Average Ratio: {:2.2e}'.format(average_ratio))
+        print()
         print('Median Adversarial: {:2.2e}'.format(median_adversarial_distance))
         print('Median Direction: {:2.2e}'.format(median_direction_distance))
         print('Median Ratio: {:2.2e}'.format(median_ratio))
 
 def batch_main():
     trainloader = model_tools.cifar10_trainloader(1, 10, flip=False, crop=False, normalize=False, shuffle=True)
-    testloader = model_tools.cifar10_testloader(1, 10, normalize=False, shuffle=False)
+    testloader = model_tools.cifar10_testloader(1, 10, normalize=False, shuffle=True)
 
     model = prepare_model()
     model.eval()
@@ -379,7 +390,7 @@ def batch_main():
     adversarial_criterion = foolbox.criteria.Misclassification()
     adversarial_criterion = foolbox.criteria.CombinedCriteria(adversarial_criterion, TargetTop2Difference(1e-5))
     if p == 2:
-        adversarial_attack = foolbox.attacks.DeepFoolLinfinityAttack(criterion=adversarial_criterion) #foolbox.attacks.DeepFoolLinfinityAttack()
+        adversarial_attack = foolbox.attacks.DeepFoolLinfinityAttack(criterion=adversarial_criterion)
     elif p == np.Infinity:
         adversarial_attack = foolbox.attacks.DeepFoolL2Attack(criterion=adversarial_criterion)
     #adversarial_attack = RandomDirectionAttack(100, 100, 1e-2, 1e-5, criterion=adversarial_criterion)
@@ -390,16 +401,16 @@ def batch_main():
     if p == 2:
         adversarial_anti_attack = foolbox.attacks.DeepFoolL2Attack(criterion=anti_adversarial_criterion)
     elif p == np.Infinity:
-        adversarial_anti_attack = foolbox.attacks.DeepFoolLinfinityAttack(criterion=anti_adversarial_criterion) #foolbox.attacks.DeepFoolLinfinityAttack()
+        adversarial_anti_attack = foolbox.attacks.DeepFoolLinfinityAttack(criterion=anti_adversarial_criterion)
     #adversarial_anti_attack = FineTuningAttack(adversarial_attack, p)
 
     #basic_test(model, testloader, adversarial_attack, adversarial_anti_attack, p)
     #image_test(model, testloader, adversarial_attack, adversarial_anti_attack)
     #direction_attack = RandomDirectionAttack(100, 100, 1e-2, 1e-5)
 
-    distance_calculator = BoundaryDistanceCalculator(0, 1, 1000, 100, 1e-1, 1e-5)
+    distance_calculator = BoundaryDistanceCalculator(0, 1, 1000, 100, 0.05, 1e-7)
 
-    approximation_test(model, testloader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=adversarial_attack)
+    approximation_test(model, testloader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=None)
 
 
 
