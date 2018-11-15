@@ -10,3 +10,7 @@
 * Check custom filters for utils.Filter
 * Check get_best_threshold
 * Add support for test recipes? (such as files with test specifications)
+* Implement a non-parallel version of the attacks (for comparison with the parallel version and testing)
+* Handling parallel attacks requires quite a lot of considerations. Hide them from the user
+* Implement logging
+* The RandomDirectionAttack doesn't return a correct Adversarial (e.g. wrong distance) if unpack=False

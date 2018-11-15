@@ -8,6 +8,7 @@ import utils
 import tests
 import visualisation
 import model_tools
+import batch_attack
 from pytorch_classification.models.cifar.densenet import DenseNet
 
 #NOTA: La precisione del floating point si traduce in un errore medio dello 0,01% (con punte dello 0,5%)
@@ -73,10 +74,10 @@ class FineTuningAttack(foolbox.attacks.Attack):
         input_or_adv.predictions(previous_image)
         #print(np.all(np.equal(previous_image, input_or_adv.image)))
 
-class BoundaryDistanceCalculator:
-    def __init__(self, bound_min, bound_max, directions, search_steps, search_epsilon, finetuning_precision):
-        self.bound_min = bound_min
-        self.bound_max = bound_max
+class RandomDirectionAttack(foolbox.attacks.Attack):
+    def __init__(self, model, criterion, p, directions, search_steps, search_epsilon, finetuning_precision):
+        super().__init__(model, criterion, distance=foolbox.distances.MSE, threshold=None)
+        self.p = p
         self.directions = directions
         self.search_steps = search_steps
         self.search_epsilon = search_epsilon
@@ -90,20 +91,31 @@ class BoundaryDistanceCalculator:
         return directions.astype(np.float32)
 
     #Avoids Out of Memory errors by feeding n samples each time
-    def _safe_batch_predictions(self, model, images, n=1):
-        outputs = []
+    def _safe_batch_predictions(self, foolbox_adversarial, images, n=1):
+        batch_predictions = []
+        batch_is_adversarial = []
         split_images = [np.array(images[i * n:(i + 1) * n]) for i in range((len(images) + n - 1) // n )] 
         for subsection in split_images:
-            outputs += list(model.batch_predictions(subsection.astype(np.float32)))
-        return np.array(outputs)
+            subsection_predictions, subsection_is_adversarial = foolbox_adversarial.batch_predictions(subsection.astype(np.float32))
 
-    def _get_successful_adversarials(self, model, criterion, image, label, vectors, magnitude):
-        potential_adversarials = np.clip(vectors * magnitude + image, self.bound_min, self.bound_max).astype(np.float32)
-        adversarial_predictions = self._safe_batch_predictions(model, potential_adversarials, n=50)
-        successful_adversarial_indices = np.array([i for i in range(len(potential_adversarials)) if criterion.is_adversarial(adversarial_predictions[i], label)]).astype(int)
+            batch_predictions += list(subsection_predictions)
+            batch_is_adversarial += list(subsection_is_adversarial)
+
+        return np.array(batch_predictions), np.array(batch_is_adversarial)
+
+    def _get_successful_adversarials(self, foolbox_adversarial, vectors, magnitude):
+        bound_min, bound_max = foolbox_adversarial.bounds()
+        image = foolbox_adversarial.original_image
+        potential_adversarials = np.clip(vectors * magnitude + image, bound_min, bound_max).astype(np.float32)
+        adversarial_predictions, is_adversarials = self._safe_batch_predictions(foolbox_adversarial, potential_adversarials, n=50)
+
+        successful_adversarial_indices = np.nonzero(is_adversarials)[0]
+
         return potential_adversarials[successful_adversarial_indices], vectors[successful_adversarial_indices]
 
-    def get_closest_sample(self, image, label, model, criterion, p):
+    def _get_closest_sample(self, foolbox_adversarial):
+        image = foolbox_adversarial.original_image
+
         vectors = [self._random_directions(image.size) for i in range(self.directions)]
         vectors = [np.reshape(vector, list(image.shape)) for vector in vectors]
         vectors = np.array(vectors)
@@ -113,14 +125,14 @@ class BoundaryDistanceCalculator:
         best_adversarial = None
 
         for _ in range(self.search_steps):
-            successful_adversarials, successful_vectors = self._get_successful_adversarials(model, criterion, image, label, vectors, search_magnitude)
+            successful_adversarials, successful_vectors = self._get_successful_adversarials(foolbox_adversarial, vectors, search_magnitude)
 
             #The first samples to cross the boundary are the potential candidates, so we drop the rest
             if len(successful_adversarials) > 0:
                 print('Found {} successful adversarials with search magnitude {}'.format(len(successful_adversarials), search_magnitude))
                 vectors = successful_vectors
 
-                best_adversarial_index = np.argmin(utils.lp_distance(successful_adversarials, image, p, True))
+                best_adversarial_index = np.argmin(utils.lp_distance(successful_adversarials, image, self.p, True))
                 best_adversarial = successful_adversarials[best_adversarial_index]
                 break
 
@@ -138,14 +150,14 @@ class BoundaryDistanceCalculator:
         while (max_ - min_) > self.finetuning_precision:
             finetuning_magnitude = (max_ + min_) / 2
 
-            successful_adversarials, successful_vectors = self._get_successful_adversarials(model, criterion, image, label, vectors, finetuning_magnitude)
+            successful_adversarials, successful_vectors = self._get_successful_adversarials(foolbox_adversarial, vectors, finetuning_magnitude)
 
             if len(successful_adversarials) == 0:
                 min_ = finetuning_magnitude
             else:
                 max_ = finetuning_magnitude
 
-                best_adversarial_index = np.argmin(utils.lp_distance(successful_adversarials, image, p, True))
+                best_adversarial_index = np.argmin(utils.lp_distance(successful_adversarials, image, self.p, True))
                 best_adversarial = successful_adversarials[best_adversarial_index]
                 vectors = successful_vectors
 
@@ -154,8 +166,15 @@ class BoundaryDistanceCalculator:
         print('Finetuned from magnitude {} to {}'.format(search_magnitude, finetuning_magnitude))
 
         return best_adversarial
+    
+    @foolbox.attacks.base.call_decorator
+    def __call__(self, input_or_adv, label = None, unpack = True, **kwargs):
+        best_adversarial = self._get_closest_sample(input_or_adv)
 
-
+        #This is temporary, it's just to make sure that the best adversarial according to L_p
+        #is actually the one we found -- 15/11/2018
+        input_or_adv._reset()
+        input_or_adv.predictions(best_adversarial)
 
 def prepare_model():
     model = DenseNet(100, num_classes=10)
@@ -201,10 +220,7 @@ class TargetTop2Difference(foolbox.criteria.Criterion):
     
 
 
-def image_test(model, loader, adversarial_attack, anti_attack):
-    model.eval()
-    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0, 1))
-    
+def image_test(foolbox_model, loader, adversarial_attack, anti_attack):
     plt.ion()
     for i, data in enumerate(loader):
         images, labels = data
@@ -255,33 +271,35 @@ def batch_main():
 
     model = prepare_model()
     model.eval()
+    
+    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0, 1))
 
     p = np.Infinity
 
     adversarial_criterion = foolbox.criteria.Misclassification()
     adversarial_criterion = foolbox.criteria.CombinedCriteria(adversarial_criterion, TargetTop2Difference(1e-5))
     if p == 2:
-        adversarial_attack = foolbox.attacks.DeepFoolLinfinityAttack(criterion=adversarial_criterion)
+        adversarial_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, adversarial_criterion)
     elif p == np.Infinity:
-        adversarial_attack = foolbox.attacks.DeepFoolL2Attack(criterion=adversarial_criterion)
-    #adversarial_attack = RandomDirectionAttack(100, 100, 1e-2, 1e-5, criterion=adversarial_criterion)
+        adversarial_attack = foolbox.attacks.DeepFoolL2Attack(foolbox_model, adversarial_criterion)
+    #adversarial_attack = RandomDirectionAttack(100, 100, 1e-2, 1e-5, foolbox_model, adversarial_criterion)
     #adversarial_attack = FineTuningAttack(adversarial_attack, p)
 
     anti_adversarial_criterion = foolbox.criteria.Misclassification()
     #anti_adversarial_criterion = foolbox.criteria.CombinedCriteria(anti_adversarial_criterion, TargetTop2Difference(1e-5))
     if p == 2:
-        adversarial_anti_attack = foolbox.attacks.DeepFoolL2Attack(criterion=anti_adversarial_criterion)
+        adversarial_anti_attack = foolbox.attacks.DeepFoolL2Attack(foolbox_model, anti_adversarial_criterion)
     elif p == np.Infinity:
-        adversarial_anti_attack = foolbox.attacks.DeepFoolLinfinityAttack(criterion=anti_adversarial_criterion)
+        adversarial_anti_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, anti_adversarial_criterion)
     #adversarial_anti_attack = FineTuningAttack(adversarial_attack, p)
 
-    #basic_test(model, testloader, adversarial_attack, adversarial_anti_attack, p)
-    #tests.image_test(model, testloader, adversarial_attack, adversarial_anti_attack)
+    #basic_test(foolbox_model, testloader, adversarial_attack, adversarial_anti_attack, p)
+    #tests.image_test(foolbox_model, testloader, adversarial_attack, adversarial_anti_attack)
     #direction_attack = RandomDirectionAttack(100, 100, 1e-2, 1e-5)
 
-    distance_calculator = BoundaryDistanceCalculator(0, 1, 1000, 100, 0.05, 1e-7)
+    distance_calculator = RandomDirectionAttack(foolbox_model, foolbox.criteria.Misclassification(), p, 1000, 100, 0.05, 1e-7)
 
-    tests.approximation_test(model, testloader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=adversarial_attack)
+    tests.approximation_test(foolbox_model, testloader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=adversarial_attack)
 
 
 

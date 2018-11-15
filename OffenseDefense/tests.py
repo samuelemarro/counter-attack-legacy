@@ -6,10 +6,7 @@ import matplotlib.pyplot as plt
 import utils
 import batch_attack
 
-def basic_test(model, loader, adversarial_attack, anti_attack, p):
-    model.eval()
-    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0, 1))
-
+def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p):
     average_anti_genuine = utils.AverageMeter()
     average_anti_adversarial = utils.AverageMeter()
     average_adversarial = utils.AverageMeter()
@@ -72,9 +69,7 @@ def basic_test(model, loader, adversarial_attack, anti_attack, p):
         print('Average Anti Adversarial: {:2.2e}'.format(average_anti_adversarial.avg))
         print('Average Anti Genuine: {:2.2e}'.format(average_anti_genuine.avg))
 
-def approximation_test(model, loader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=None):
-    model.eval()
-    foolbox_model = foolbox.models.PyTorchModel(model, (0, 1), 10, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0,1))
+def approximation_test(foolbox_model, loader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=None):
 
     adversarial_distances = []
     direction_distances = []
@@ -94,7 +89,7 @@ def approximation_test(model, loader, adversarial_anti_attack, distance_calculat
 
         closest_samples = []
         for image, label in zip(anti_adversarial_filter['images'], anti_adversarial_filter['image_labels']):
-            closest_samples.append(distance_calculator.get_closest_sample(image, label, foolbox_model, foolbox.criteria.Misclassification(), p))
+            closest_samples.append(distance_calculator(image, label))
         anti_adversarial_filter['closest_samples'] = closest_samples
         successful_closest_samples = np.array([i for i in range(len(closest_samples)) if closest_samples[i] is not None], dtype=int)
 

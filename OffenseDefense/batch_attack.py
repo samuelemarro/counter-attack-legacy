@@ -174,6 +174,7 @@ def get_anti_adversarials(foolbox_model : foolbox.models.PyTorchModel,
                           workers=50,
                           adversarial_approximation_threshold : float = 1e-6,
                           anti_adversarial_approximation_threshold : float = None):
+
     filter = get_adversarials(foolbox_model,
                               images,
                               labels,
