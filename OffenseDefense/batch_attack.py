@@ -112,7 +112,7 @@ class ParallelPytorchModel(foolbox.models.PyTorchModel):
         return predictions, grad
 
 
-def run_attack(foolbox_model, attack, images, labels, workers=50):
+def run_batch_attack(foolbox_model, attack, images, labels, workers=50):
     assert len(images) == len(labels)
     model_worker = ModelBatchWorker(foolbox_model._model)
 
@@ -127,10 +127,21 @@ def run_attack(foolbox_model, attack, images, labels, workers=50):
 
     return results
 
+def run_individual_attack(attack, images, labels):
+    assert len(images) == len(labels)
+    
+    adversarials = []
+
+    for image, label in zip(images, labels):
+        adversarial = attack(image, label)
+        adversarials.append(adversarial)
+    return np.array(adversarials)
+
 def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
                      images : np.ndarray,
                      labels : np.ndarray,
                      adversarial_attack : foolbox.attacks.Attack,
+                     parallelize : bool,
                      workers: int = 50,
                      adversarial_approximation_threshold: float = None):
     filter = utils.Filter()
@@ -142,18 +153,20 @@ def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
     filter['image_labels'] = np.argmax(filter['image_predictions'], axis=-1)
     correctly_classified = np.nonzero(np.equal(filter['image_labels'],
                                                filter['ground_truth_labels']))[0]
-    print(correctly_classified)
-    print(correctly_classified.shape)
-    print(len(correctly_classified))
+    
     filter.filter(correctly_classified, 'successful_classification')
 
-    filter['adversarials'] = run_attack(foolbox_model,
-                                        adversarial_attack,
-                                        filter['images'],
-                                        filter['image_labels'],
-                                        workers=workers)
+    if parallelize:
+        filter['adversarials'] = run_batch_attack(foolbox_model,
+                                            adversarial_attack,
+                                            filter['images'],
+                                            filter['image_labels'],
+                                            workers=workers)
+    else:
+        filter['adversarials'] = run_individual_attack(adversarial_attack, filter['images'], filter['image_labels'])
     successful_adversarials = [i for i in range(len(filter['adversarials'])) if filter['adversarials'][i] is not None]
     filter.filter(successful_adversarials, 'successful_adversarial')
+
     #Convert to Numpy array after the failed samples have been removed
     filter['adversarials'] = np.array(filter['adversarials'])
 
@@ -171,7 +184,8 @@ def get_anti_adversarials(foolbox_model : foolbox.models.PyTorchModel,
                           labels : np.ndarray,
                           adversarial_attack : foolbox.attacks.Attack,
                           anti_attack : foolbox.attacks.Attack,
-                          workers=50,
+                          parallelize : bool,
+                          workers: int = 50,
                           adversarial_approximation_threshold : float = 1e-6,
                           anti_adversarial_approximation_threshold : float = None):
 
@@ -179,15 +193,23 @@ def get_anti_adversarials(foolbox_model : foolbox.models.PyTorchModel,
                               images,
                               labels,
                               adversarial_attack,
+                              parallelize,
                               workers,
                               adversarial_approximation_threshold)
 
     print('Anti-Genuines')
-    filter['anti_genuines'] = run_attack(foolbox_model, anti_attack, filter['images'], filter['image_labels'], workers=workers)
+    if parallelize:
+        filter['anti_genuines'] = run_batch_attack(foolbox_model, anti_attack, filter['images'], filter['image_labels'], workers=workers)
+    else:
+        filter['anti_genuines'] = run_individual_attack(anti_attack, filter['images'], filter['image_labels'])
     successful_anti_genuines = np.array([i for i in range(len(filter['anti_genuines'])) if filter['anti_genuines'][i] is not None], np.int32)
 
     print('Anti-Adversarials')
-    filter['anti_adversarials'] = run_attack(foolbox_model, anti_attack, filter['adversarials'], filter['adversarial_labels'], workers=workers)
+    if parallelize:
+        filter['anti_adversarials'] = run_batch_attack(foolbox_model, anti_attack, filter['adversarials'], filter['adversarial_labels'], workers=workers)
+    else:
+        filter['anti_adversarials'] = run_individual_attack(anti_attack, filter['adversarials'], filter['adversarial_labels'])
+
     successful_anti_adversarials = np.array([i for i in range(len(filter['anti_adversarials'])) if filter['anti_adversarials'][i] is not None], np.int32)
 
     successful_intersection = np.intersect1d(successful_anti_genuines, successful_anti_adversarials)

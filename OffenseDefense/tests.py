@@ -24,7 +24,7 @@ def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p):
         
         original_count = len(images)
 
-        filter, anti_genuine_count, anti_adversarial_count = batch_attack.get_anti_adversarials(foolbox_model, images, labels, adversarial_attack, anti_attack)
+        filter, anti_genuine_count, anti_adversarial_count = batch_attack.get_anti_adversarials(foolbox_model, images, labels, adversarial_attack, anti_attack, True)
 
         images = filter['images']
         labels = filter['image_labels']
@@ -69,59 +69,52 @@ def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p):
         print('Average Anti Adversarial: {:2.2e}'.format(average_anti_adversarial.avg))
         print('Average Anti Genuine: {:2.2e}'.format(average_anti_genuine.avg))
 
-def approximation_test(foolbox_model, loader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=None):
+def comparison_test(foolbox_model : foolbox.models.Model,
+                    distance_tools,
+                    p : np.float,
+                    loader):
 
-    adversarial_distances = []
-    direction_distances = []
+    final_distances = {}
+    success_rates = {}
+
+    for distance_tool in distance_tools:
+        final_distances[distance_tool.name] = []
+        success_rates[distance_tool.name] = utils.AverageMeter()
     
     for data in loader:
         images, labels = data
-        images = images.numpy()
-        labels = labels.numpy()
 
-        #If requested, test using adversarial samples (which are close to the boundary)
-        if adversarial_attack is not None:
-            adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_attack)
-            images = adversarial_filter['adversarials']
-            labels = adversarial_filter['adversarial_labels']
+        if isinstance(images, torch.Tensor):
+            images = images.numpy()
+            labels = labels.numpy()
 
-        anti_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, adversarial_anti_attack)
+        for distance_tool in distance_tools:
+            distances = distance_tool.get_distances(images, labels, p)
+            final_distances[distance_tool.name] += list(distances)
 
-        closest_samples = []
-        for image, label in zip(anti_adversarial_filter['images'], anti_adversarial_filter['image_labels']):
-            closest_samples.append(distance_calculator(image, label))
-        anti_adversarial_filter['closest_samples'] = closest_samples
-        successful_closest_samples = np.array([i for i in range(len(closest_samples)) if closest_samples[i] is not None], dtype=int)
+            success_rates[distance_tool.name].update(1, len(distances))
+            success_rates[distance_tool.name].update(0, len(images) - len(distances))
 
-        anti_adversarial_filter.filter(successful_closest_samples, 'successful_closest_samples')
-        anti_adversarial_filter['closest_samples'] = np.array(anti_adversarial_filter['closest_samples'])
-        closest_samples = anti_adversarial_filter['closest_samples']
+            tool_distances = final_distances[distance_tool.name]
+            success_rate = success_rates[distance_tool.name].avg
 
-        images = anti_adversarial_filter['images']
-        labels = anti_adversarial_filter['image_labels']
-        adversarials = anti_adversarial_filter['adversarials']
+            average_distance = np.average(tool_distances)
+            median_distance = np.median(tool_distances)
+            failed_samples = success_rates[distance_tool.name].count - success_rates[distance_tool.name].sum
+            adjusted_median_distance = np.median(tool_distances + [np.Infinity] * failed_samples)
+            
+            print('{}:'.format(distance_tool.name))
+            print('Average Distance: {:2.2e}'.format(average_distance))
+            print('Median Distance: {:2.2e}'.format(median_distance))
+            print('Success Rate: {:2.2f}%'.format(success_rate * 100.0))
+            print('Adjusted Median Distance: {:2.2e}'.format(adjusted_median_distance))
 
-        #Compute the distances
-        adversarial_distances += list(utils.lp_distance(adversarials, images, p, True))
-        direction_distances += list(utils.lp_distance(closest_samples, images, p, True))
+            print()
+            print('============')
+            print()
 
-        ratios = np.array([adversarial / direction for adversarial, direction in zip(adversarial_distances, direction_distances)])
-
-        #visualisation.plot_histogram(np.array(adversarial_distances), 'blue')
-        #visualisation.plot_histogram(np.array(direction_distances), 'red')
-
-        average_adversarial_distance = np.average(np.array(adversarial_distances))
-        average_direction_distance = np.average(np.array(direction_distances))
-        average_ratio = np.average(ratios)
-
-        median_adversarial_distance = np.median(np.array(adversarial_distances))
-        median_direction_distance = np.median(np.array(direction_distances))
-        median_ratio = np.median(ratios)
-
-        print('Average Adversarial: {:2.2e}'.format(average_adversarial_distance))
-        print('Average Direction: {:2.2e}'.format(average_direction_distance))
-        print('Average Ratio: {:2.2e}'.format(average_ratio))
         print()
-        print('Median Adversarial: {:2.2e}'.format(median_adversarial_distance))
-        print('Median Direction: {:2.2e}'.format(median_direction_distance))
-        print('Median Ratio: {:2.2e}'.format(median_ratio))
+        print('====================')
+        print()
+
+    return final_distances, success_rates

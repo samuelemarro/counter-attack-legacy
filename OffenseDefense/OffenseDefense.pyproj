@@ -27,6 +27,9 @@
     <Compile Include="batch_processing.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="distance_tools.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="model_tools.py">
       <SubType>Code</SubType>
     </Compile>

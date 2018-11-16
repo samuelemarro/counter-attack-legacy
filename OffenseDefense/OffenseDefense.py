@@ -1,4 +1,5 @@
 import queue
+import logging
 import numpy as np
 import torch
 import torch.nn as nn
@@ -9,6 +10,7 @@ import tests
 import visualisation
 import model_tools
 import batch_attack
+import distance_tools
 from pytorch_classification.models.cifar.densenet import DenseNet
 
 #NOTA: La precisione del floating point si traduce in un errore medio dello 0,01% (con punte dello 0,5%)
@@ -114,6 +116,8 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         return potential_adversarials[successful_adversarial_indices], vectors[successful_adversarial_indices]
 
     def _get_closest_sample(self, foolbox_adversarial):
+        logger = logging.getLogger(__name__)
+
         image = foolbox_adversarial.original_image
 
         vectors = [self._random_directions(image.size) for i in range(self.directions)]
@@ -129,7 +133,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
 
             #The first samples to cross the boundary are the potential candidates, so we drop the rest
             if len(successful_adversarials) > 0:
-                print('Found {} successful adversarials with search magnitude {}'.format(len(successful_adversarials), search_magnitude))
+                logger.info('Found {} successful adversarials with search magnitude {}'.format(len(successful_adversarials), search_magnitude))
                 vectors = successful_vectors
 
                 best_adversarial_index = np.argmin(utils.lp_distance(successful_adversarials, image, self.p, True))
@@ -139,7 +143,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
             search_magnitude += self.search_epsilon
         
         if len(successful_adversarials) == 0:
-            print('Couldn\'t find an adversarial sample')
+            logger.warning('Couldn\'t find an adversarial sample')
             return None
 
         #Finetuning: Use binary search to find the distance with high precision
@@ -163,7 +167,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
 
         assert best_adversarial is not None
 
-        print('Finetuned from magnitude {} to {}'.format(search_magnitude, finetuning_magnitude))
+        logger.info('Finetuned from magnitude {} to {}'.format(search_magnitude, finetuning_magnitude))
 
         return best_adversarial
     
@@ -297,9 +301,12 @@ def batch_main():
     #tests.image_test(foolbox_model, testloader, adversarial_attack, adversarial_anti_attack)
     #direction_attack = RandomDirectionAttack(100, 100, 1e-2, 1e-5)
 
-    distance_calculator = RandomDirectionAttack(foolbox_model, foolbox.criteria.Misclassification(), p, 1000, 100, 0.05, 1e-7)
+    direction_attack = RandomDirectionAttack(foolbox_model, foolbox.criteria.Misclassification(), p, 1000, 100, 0.05, 1e-7)
 
-    tests.approximation_test(foolbox_model, testloader, adversarial_anti_attack, distance_calculator, p, adversarial_attack=adversarial_attack)
+    adversarial_distance_tool = distance_tools.AdversarialDistance(type(adversarial_attack).__name__, foolbox_model, adversarial_attack, True)
+    direction_distance_tool = distance_tools.AdversarialDistance(type(direction_attack).__name__, foolbox_model, direction_attack, False)
+
+    tests.comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool], p, testloader)
 
 
 

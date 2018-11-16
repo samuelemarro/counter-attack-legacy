@@ -3,7 +3,6 @@
 * Fix Matplotlib not responding
 * Repeat basic_test with increased iterations
 * Check FineTuningAttack
-* Check BoundaryDistanceCalculator
 * Introduce more assertions and unit tests
 * PersistentAttack (tries the same attack with different epsilons until it succeeds)
 * Find a policy for failures in adversarial attacks
@@ -14,3 +13,5 @@
 * Handling parallel attacks requires quite a lot of considerations. Hide them from the user
 * Implement logging
 * The RandomDirectionAttack doesn't return a correct Adversarial (e.g. wrong distance) if unpack=False
+* batch_attack.get_anti_adversarials is a bit a repetition of batch_attack.get_adversarials
+* get_adversarials and get_anti_adversarials returning a Filter is confusing
