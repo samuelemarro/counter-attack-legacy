@@ -88,6 +88,10 @@ def comparison_test(foolbox_model : foolbox.models.Model,
             images = images.numpy()
             labels = labels.numpy()
 
+        correct_classification_filter = batch_attack.get_correct_samples(foolbox_model, images, labels)
+        images = correct_classification_filter['images']
+        labels = correct_classification_filter['image_labels']
+
         for distance_tool in distance_tools:
             distances = distance_tool.get_distances(images, labels, p)
             final_distances[distance_tool.name] += list(distances)
@@ -100,8 +104,10 @@ def comparison_test(foolbox_model : foolbox.models.Model,
 
             average_distance = np.average(tool_distances)
             median_distance = np.median(tool_distances)
-            failed_samples = success_rates[distance_tool.name].count - success_rates[distance_tool.name].sum
-            adjusted_median_distance = np.median(tool_distances + [np.Infinity] * failed_samples)
+
+            #Treat failures as samples with distance=Infinity
+            failure_count = success_rates[distance_tool.name].count - success_rates[distance_tool.name].sum
+            adjusted_median_distance = np.median(tool_distances + [np.Infinity] * failure_count)
             
             print('{}:'.format(distance_tool.name))
             print('Average Distance: {:2.2e}'.format(average_distance))

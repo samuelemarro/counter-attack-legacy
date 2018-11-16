@@ -15,3 +15,4 @@
 * The RandomDirectionAttack doesn't return a correct Adversarial (e.g. wrong distance) if unpack=False
 * batch_attack.get_anti_adversarials is a bit a repetition of batch_attack.get_adversarials
 * get_adversarials and get_anti_adversarials returning a Filter is confusing
+* Checking the correct classifications in get_adversarial_samples is sometimes redundant

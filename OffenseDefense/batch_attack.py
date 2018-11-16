@@ -137,15 +137,10 @@ def run_individual_attack(attack, images, labels):
         adversarials.append(adversarial)
     return np.array(adversarials)
 
-def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
-                     images : np.ndarray,
-                     labels : np.ndarray,
-                     adversarial_attack : foolbox.attacks.Attack,
-                     parallelize : bool,
-                     workers: int = 50,
-                     adversarial_approximation_threshold: float = None):
+def get_correct_samples(foolbox_model : foolbox.models.PyTorchModel,
+                        images : np.ndarray,
+                        labels : np.ndarray):
     filter = utils.Filter()
-
     filter['images'] = images
     filter['ground_truth_labels'] = labels
 
@@ -155,6 +150,18 @@ def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
                                                filter['ground_truth_labels']))[0]
     
     filter.filter(correctly_classified, 'successful_classification')
+
+    return filter
+
+
+def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
+                     images : np.ndarray,
+                     labels : np.ndarray,
+                     adversarial_attack : foolbox.attacks.Attack,
+                     parallelize : bool,
+                     workers: int = 50,
+                     adversarial_approximation_threshold: float = None):
+    filter = get_correct_samples(foolbox_model, images, labels)
 
     if parallelize:
         filter['adversarials'] = run_batch_attack(foolbox_model,

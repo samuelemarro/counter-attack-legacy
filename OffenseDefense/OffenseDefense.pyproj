@@ -34,6 +34,9 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="OffenseDefense.py" />
+    <Compile Include="unit_tests\parallelism_tests.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="tests.py">
       <SubType>Code</SubType>
     </Compile>
@@ -47,6 +50,9 @@
   <ItemGroup>
     <Content Include="test_configurations.md" />
     <Content Include="todo.md" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="unit_tests\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in
