@@ -48,14 +48,6 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
-    <Content Include=".travis.yml">
-      <SubType>Code</SubType>
-    </Content>
-    <Content Include="requirements.txt" />
-    <Content Include="test_configurations.md" />
-    <Content Include="todo.md" />
-  </ItemGroup>
-  <ItemGroup>
     <Folder Include="unit_tests\" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
