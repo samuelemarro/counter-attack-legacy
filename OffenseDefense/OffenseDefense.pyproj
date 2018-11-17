@@ -48,6 +48,9 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <Content Include=".travis.yml">
+      <SubType>Code</SubType>
+    </Content>
     <Content Include="test_configurations.md" />
     <Content Include="todo.md" />
   </ItemGroup>
