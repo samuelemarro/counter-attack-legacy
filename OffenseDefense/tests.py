@@ -5,6 +5,7 @@ import foolbox
 import matplotlib.pyplot as plt
 import OffenseDefense.utils as utils
 import OffenseDefense.batch_attack as batch_attack
+import OffenseDefense.loaders as loaders
 
 def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p):
     average_anti_genuine = utils.AverageMeter()
@@ -72,7 +73,8 @@ def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p):
 def comparison_test(foolbox_model : foolbox.models.Model,
                     distance_tools,
                     p : np.float,
-                    loader):
+                    loader : loaders.Loader,
+                    verbose : bool = True):
 
     final_distances = {}
     success_rates = {}

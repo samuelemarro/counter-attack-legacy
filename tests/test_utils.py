@@ -9,6 +9,8 @@ def test_lp_distance_correct_distance():
 
     #L_0: Count of different values
     assert utils.lp_distance(x, y, 0, False) == 4
+    #L_1: Sum of absolute differences
+    assert utils.lp_distance(x, y, 1, False) == 7
     #L_2: Square root of the sum of squared differences
     assert utils.lp_distance(x, y, 2, False) == np.sqrt(15)
     #L_infinity: Maximum difference
