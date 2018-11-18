@@ -1,5 +1,5 @@
-import batch_attack
-import utils
+import OffenseDefense.batch_attack as batch_attack
+import OffenseDefense.utils as utils
 
 class DistanceTool:
     def __init__(self, name):

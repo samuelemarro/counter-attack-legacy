@@ -3,8 +3,8 @@ import numpy as np
 import torch
 import foolbox
 import matplotlib.pyplot as plt
-import utils
-import batch_attack
+import OffenseDefense.utils as utils
+import OffenseDefense.batch_attack as batch_attack
 
 def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p):
     average_anti_genuine = utils.AverageMeter()

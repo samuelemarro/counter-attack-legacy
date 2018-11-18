@@ -74,21 +74,26 @@ unlike numpy.linanlg.norm
 """
 def lp_distance(x, y, p, batch, broadcast=True):
     if p < 0:
-        raise ValueError('p must be positive')
+        raise ValueError('p must be positive or zero')
 
     if broadcast:
         x, y = np.broadcast_arrays(x, y)
 
-    def single_image(_x, _y):
+    def single_image(diff):
+        #L_infinity: Maximum difference
         if np.isinf(p):
-            return np.max(np.abs(_x - _y))
+            return np.max(np.abs(diff))
+        #L_0: Count of different values
+        elif p == 0:
+            return len(np.nonzero(np.reshape(diff, -1))[0])
+        #L_p: p-root of the sum of diff^p
         else:
-            return np.power(np.sum(np.power(np.abs(_x - _y), p)), 1 / p)
+            return np.power(np.sum(np.power(np.abs(diff), p)), 1 / p)
 
     if batch:
-        return np.array([single_image(_x, _y) for _x, _y in zip(x, y)])
+        return np.array([single_image(_x - _y) for _x, _y in zip(x, y)])
     else:
-        return single_image(x, y)
+        return single_image(x - y)
 
 def top_k_difference(x, k=2):
     sorted_x = np.sort(x)#Sort in ascending order

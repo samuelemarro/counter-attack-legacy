@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sklearn.metrics as metrics
 from sklearn.neighbors.kde import KernelDensity
-import utils
+import OffenseDefense.utils as utils
 
 def show_image(image, channels_first=True):
     #imshow requires images in format (W, H, C)

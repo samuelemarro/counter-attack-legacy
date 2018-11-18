@@ -259,6 +259,8 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+
+#Model weights and datasets
 /OffenseDefense/pytorch_classification/data/cifar-10-python.tar.gz
 /OffenseDefense/pytorch_classification/data/cifar-10-batches-py/test_batch
 /OffenseDefense/pytorch_classification/data/cifar-10-batches-py/readme.html
@@ -290,3 +292,6 @@ __pycache__/
 /OffenseDefense/data/cifar-10-batches-py/data_batch_3
 /OffenseDefense/data/cifar-10-batches-py/data_batch_2
 /OffenseDefense/data/cifar-10-batches-py/data_batch_1
+
+#SetupTools output
+/OffenseDefense.egg-info

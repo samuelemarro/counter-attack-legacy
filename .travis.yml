@@ -23,6 +23,7 @@ install:
   # Travis currently does not support CUDA, so we will run CI with the CPU version of Torch
   - conda install pytorch-cpu torchvision-cpu -c pytorch
   - pip install -r requirements.txt -q
+  - pip install -e .
   - pip install --user codecov -q
 # command to run tests
 script:

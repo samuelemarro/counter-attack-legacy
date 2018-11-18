@@ -328,7 +328,7 @@ class RandomNoiseLoader:
 def batch_main():
     trainloader = model_tools.cifar10_trainloader(1, 10, flip=False, crop=False, normalize=False, shuffle=True)
     testloader = model_tools.cifar10_testloader(1, 10, normalize=False, shuffle=True)
-
+    
     model = prepare_model()
     model.eval()
     
