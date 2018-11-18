@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>471c9cc3-cac2-4d12-a432-cfd9a9f84bdd</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>OffenseDefense.py</StartupFile>
+    <StartupFile>__main__.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>
@@ -27,13 +27,19 @@
     <Compile Include="batch_processing.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="detectors.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="distance_tools.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="loaders.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="model_tools.py">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Include="OffenseDefense.py" />
+    <Compile Include="__main__.py" />
     <Compile Include="tests.py">
       <SubType>Code</SubType>
     </Compile>
@@ -43,6 +49,7 @@
     <Compile Include="visualisation.py">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="__init__.py" />
   </ItemGroup>
   <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
   <!-- Uncomment the CoreCompile target to enable the Build command in

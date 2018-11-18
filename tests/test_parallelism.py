@@ -1,3 +1,2 @@
 import pytest
-from context import OffenseDefense
-from OffenseDefense import batch_attack
+import OffenseDefense.batch_attack as batch_attack

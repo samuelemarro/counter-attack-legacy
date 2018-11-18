@@ -1,13 +1,11 @@
 import pytest
-from context import OffenseDefense
-from OffenseDefense import utils
+#from context import OffenseDefense
+import OffenseDefense.utils as utils
 import numpy as np
 
 def test_lp_distance_correct_distance():
     x = np.array([[1, 2, 3], [4, 5, 6]])
     y = np.array([[2, 2, 1], [3, 2, 6]])
-
-    print(dir(OffenseDefense))
 
     #L_0: Count of different values
     assert utils.lp_distance(x, y, 0, False) == 4

@@ -84,10 +84,6 @@ def comparison_test(foolbox_model : foolbox.models.Model,
     for data in loader:
         images, labels = data
 
-        if isinstance(images, torch.Tensor):
-            images = images.numpy()
-            labels = labels.numpy()
-
         correct_classification_filter = batch_attack.get_correct_samples(foolbox_model, images, labels)
         images = correct_classification_filter['images']
         labels = correct_classification_filter['image_labels']

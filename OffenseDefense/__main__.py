@@ -1,18 +1,16 @@
 import queue
 import logging
-import collections
 import numpy as np
 import torch
 import torch.nn as nn
 import foolbox
 import matplotlib.pyplot as plt
-import utils
-import tests
-import visualisation
-import model_tools
-import batch_attack
-import distance_tools
-from pytorch_classification.models.cifar.densenet import DenseNet
+import OffenseDefense.utils as utils
+import OffenseDefense.tests as tests
+import OffenseDefense.model_tools as model_tools
+import OffenseDefense.distance_tools as distance_tools
+import OffenseDefense.loaders as loaders
+from OffenseDefense.pytorch_classification.models.cifar.densenet import DenseNet
 
 #NOTA: La precisione del floating point si traduce in un errore medio dello 0,01% (con punte dello 0,5%)
 #Questo errore può essere diminuito passando al double, ma è un suicidio computazionale perché raddoppia la
@@ -269,65 +267,12 @@ def image_test(foolbox_model, loader, adversarial_attack, anti_attack):
         plt.draw()
         plt.pause(0.001)
 
-class AdversarialLoader:
-    def __init__(self, loader, foolbox_model, attack, parallelize):
-        self.loader_iterator = iter(loader)
-        self.foolbox_model = foolbox_model
-        self.attack = attack
-        self.parallelize = parallelize
 
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        try:
-            images, labels = self.loader_iterator.next()
-            
-            if isinstance(images, torch.Tensor):
-                images = images.numpy()
-                labels = labels.numpy()
-
-
-            adversarial_filter = batch_attack.get_adversarials(self.foolbox_model, images, labels, self.attack, self.parallelize)
-            return adversarial_filter['adversarials'], adversarial_filter['adversarial_labels']
-
-        except StopIteration:
-            raise
-
-class RandomNoiseLoader:
-    def __init__(self, foolbox_model, output_min, output_max, output_shape, batch_size, batch_count):
-        self.foolbox_model = foolbox_model
-        self.output_min = output_min
-        self.output_max = output_max
-
-        if isinstance(output_shape, collections.Iterable):
-            self.output_shape = output_shape
-        else:
-            self.output_shape = [output_shape]
-
-        self.batch_size = batch_size
-        self.batch_count = batch_count
-        self._batch_counter = 0
-
-    def __iter__(self):
-        self._batch_counter = 0
-        return self
-
-    def __next__(self):
-        if self._batch_counter == self.batch_count:
-            raise StopIteration()
-        
-        output = np.random.uniform(self.output_min, self.output_max, [self.batch_size] + self.output_shape)
-
-        self._batch_counter += 1
-        print(output.shape)
-
-        return output, self.foolbox_model.batch_predictions(output)
         
 
 def batch_main():
     trainloader = model_tools.cifar10_trainloader(1, 10, flip=False, crop=False, normalize=False, shuffle=True)
-    testloader = model_tools.cifar10_testloader(1, 10, normalize=False, shuffle=True)
+    testloader = model_tools.cifar10_testloader(1, 40, normalize=False, shuffle=True)
     
     model = prepare_model()
     model.eval()
@@ -362,11 +307,11 @@ def batch_main():
     adversarial_distance_tool = distance_tools.AdversarialDistance(type(adversarial_attack).__name__, foolbox_model, adversarial_attack, True)
     direction_distance_tool = distance_tools.AdversarialDistance(type(direction_attack).__name__, foolbox_model, direction_attack, False)
 
-    
-    adversarial_loader = AdversarialLoader(testloader, foolbox_model, adversarial_attack, True)
-    random_noise_loader = RandomNoiseLoader(foolbox_model, 0, 1, [3, 32, 32], 10, 20)
+    testloader = loaders.TorchLoader(testloader)
+    adversarial_loader = loaders.AdversarialLoader(testloader, foolbox_model, adversarial_attack, True)
+    random_noise_loader = loaders.RandomNoiseLoader(foolbox_model, 0, 1, [3, 32, 32], 10, 20)
 
-    tests.comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool], p, iter(adversarial_loader))
+    tests.comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool], p, adversarial_loader)
 
 
 

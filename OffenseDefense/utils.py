@@ -3,6 +3,7 @@ import pickle
 import numpy as np
 import sklearn.metrics as metrics
 import collections
+
 class AverageMeter(object):
     """Computes and stores the average and current value
        Imported from https://github.com/pytorch/examples/blob/master/imagenet/main.py#L247-L262
