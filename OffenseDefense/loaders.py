@@ -23,17 +23,23 @@ class TorchLoader(Loader):
             raise
 
 class AdversarialLoader(Loader):
-    def __init__(self, loader, foolbox_model, attack, parallelize):
+    def __init__(self, loader, foolbox_model, attack, batch_worker=None, num_workers=50):
         self.loader_iterator = iter(loader)
         self.foolbox_model = foolbox_model
         self.attack = attack
-        self.parallelize = parallelize
+        self.batch_worker = batch_worker
+        self.num_workers = num_workers
 
     def __next__(self):
         try:
             images, labels = next(self.loader_iterator)
 
-            adversarial_filter = batch_attack.get_adversarials(self.foolbox_model, images, labels, self.attack, self.parallelize)
+            adversarial_filter = batch_attack.get_adversarials(self.foolbox_model,
+                                                               images,
+                                                               labels,
+                                                               self.attack,
+                                                               self.batch_worker,
+                                                               self.num_workers)
             return adversarial_filter['adversarials'], adversarial_filter['adversarial_labels']
 
         except StopIteration:

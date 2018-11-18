@@ -7,7 +7,7 @@ import OffenseDefense.utils as utils
 import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.loaders as loaders
 
-def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p):
+def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p, batch_worker=None, num_workers=50):
     average_anti_genuine = utils.AverageMeter()
     average_anti_adversarial = utils.AverageMeter()
     average_adversarial = utils.AverageMeter()
@@ -25,7 +25,7 @@ def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p):
         
         original_count = len(images)
 
-        filter, anti_genuine_count, anti_adversarial_count = batch_attack.get_anti_adversarials(foolbox_model, images, labels, adversarial_attack, anti_attack, True)
+        filter, anti_genuine_count, anti_adversarial_count = batch_attack.get_anti_adversarials(foolbox_model, images, labels, adversarial_attack, anti_attack, batch_worker, num_workers)
 
         images = filter['images']
         labels = filter['image_labels']
