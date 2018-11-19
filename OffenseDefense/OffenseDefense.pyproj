@@ -21,6 +21,9 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="attacks.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="batch_attack.py">
       <SubType>Code</SubType>
     </Compile>
@@ -105,6 +108,7 @@
     <Folder Include="pytorch_classification\__pycache__\" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="models\pytorch\LICENSE.txt" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\checkpoint.pth.tar" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\log.eps" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\log.txt" />

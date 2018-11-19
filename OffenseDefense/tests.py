@@ -4,6 +4,7 @@ import torch
 import foolbox
 import matplotlib.pyplot as plt
 import OffenseDefense.utils as utils
+import OffenseDefense.batch_processing as batch_processing
 import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.loaders as loaders
 
@@ -70,7 +71,7 @@ def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p, batch_
         print('Average Anti Adversarial: {:2.2e}'.format(average_anti_adversarial.avg))
         print('Average Anti Genuine: {:2.2e}'.format(average_anti_genuine.avg))
 
-def comparison_test(foolbox_model : foolbox.models.Model,
+def distance_comparison_test(foolbox_model : foolbox.models.Model,
                     distance_tools,
                     p : np.float,
                     loader : loaders.Loader,
@@ -83,8 +84,7 @@ def comparison_test(foolbox_model : foolbox.models.Model,
         final_distances[distance_tool.name] = []
         success_rates[distance_tool.name] = utils.AverageMeter()
     
-    for data in loader:
-        images, labels = data
+    for images, labels in loader:
 
         correct_classification_filter = batch_attack.get_correct_samples(foolbox_model, images, labels)
         images = correct_classification_filter['images']
@@ -121,4 +121,44 @@ def comparison_test(foolbox_model : foolbox.models.Model,
         print('====================')
         print()
 
+    #We're using AverageMeters, replace them with the final averages
+    for key, value in success_rates.items():
+        success_rates[key] = value.avg
+
     return final_distances, success_rates
+
+def attack_test(foolbox_model : foolbox.models.Model,
+                loader : loaders.Loader,
+                attack : foolbox.attacks.Attack,
+                p : int,
+                batch_worker : batch_processing.BatchWorker = None,
+                num_workers : int = 50):
+
+    success_rate = utils.AverageMeter()
+    distances = []
+
+    for images, labels in loader:
+        adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, batch_worker, num_workers)
+        adversarials = adversarial_filter['adversarials']
+        failure_count = len(images) - len(adversarials)
+
+        success_rate.update(1, len(adversarials))
+        success_rate.update(0, failure_count)
+
+        distances += list(utils.lp_distance(adversarial_filter['adversarials'], adversarial_filter['images'], p, True))
+
+        average_distance = np.average(distances)
+        median_distance = np.median(distances)
+        adjusted_median_distance = np.median(distances + [np.Infinity] * failure_count)
+            
+        print('Average Distance: {:2.2e}'.format(average_distance))
+        print('Median Distance: {:2.2e}'.format(median_distance))
+        print('Success Rate: {:2.2f}%'.format(success_rate.avg * 100.0))
+        print('Adjusted Median Distance: {:2.2e}'.format(adjusted_median_distance))
+
+        print()
+        print('============')
+        print()
+
+    return success_rate.avg, distances
+        
