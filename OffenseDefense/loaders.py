@@ -1,4 +1,5 @@
 import collections
+import numpy as np
 import OffenseDefense.batch_attack as batch_attack
 
 class Loader:
@@ -9,7 +10,12 @@ class Loader:
 
 class TorchLoader(Loader):
     def __init__(self, torch_loader):
-        self.torch_iterator = iter(torch_loader)
+        self.torch_loader = torch_loader
+        self.torch_iterator = None
+
+    def __iter__(self):
+        self.torch_iterator = iter(self.torch_loader)
+        return self
 
     def __next__(self):
         try:
@@ -23,12 +29,18 @@ class TorchLoader(Loader):
             raise
 
 class AdversarialLoader(Loader):
-    def __init__(self, loader, foolbox_model, attack, batch_worker=None, num_workers=50):
-        self.loader_iterator = iter(loader)
+    def __init__(self, loader, foolbox_model, attack, adversarial_labels, batch_worker=None, num_workers=50):
+        self.loader = loader
+        self.loader_iterator = None
         self.foolbox_model = foolbox_model
         self.attack = attack
+        self.adversarial_labels = adversarial_labels
         self.batch_worker = batch_worker
         self.num_workers = num_workers
+
+    def __iter__(self):
+        self.loader_iterator = iter(self.loader)
+        return self
 
     def __next__(self):
         try:
@@ -40,7 +52,13 @@ class AdversarialLoader(Loader):
                                                                self.attack,
                                                                self.batch_worker,
                                                                self.num_workers)
-            return adversarial_filter['adversarials'], adversarial_filter['adversarial_labels']
+
+            adversarials = adversarial_filter['adversarials']
+            if self.adversarial_labels:
+                output_labels = adversarial_filter['adversarial_labels']
+            else:
+                output_labels = adversarial_filter['image_labels']
+            return adversarials, output_labels
 
         except StopIteration:
             raise
@@ -68,9 +86,9 @@ class RandomNoiseLoader:
         if self._batch_counter == self.batch_count:
             raise StopIteration()
         
-        output = np.random.uniform(self.output_min, self.output_max, [self.batch_size] + self.output_shape)
+        samples = np.random.uniform(self.output_min, self.output_max, [self.batch_size] + self.output_shape).astype(np.float32)
+        labels = np.argmax(self.foolbox_model.batch_predictions(samples), axis=1).astype(int)
 
         self._batch_counter += 1
-        print(output.shape)
 
-        return output, self.foolbox_model.batch_predictions(output)
+        return samples, labels

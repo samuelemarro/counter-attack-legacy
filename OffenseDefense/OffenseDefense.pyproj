@@ -71,6 +71,9 @@
     <Compile Include="pytorch_classification\utils\visualize.py" />
     <Compile Include="pytorch_classification\utils\__init__.py" />
     <Compile Include="pytorch_classification\__init__.py" />
+    <Compile Include="training.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="__main__.py" />
     <Compile Include="tests.py">
       <SubType>Code</SubType>

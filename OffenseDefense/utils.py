@@ -1,8 +1,9 @@
 import gzip
 import pickle
+import collections
+import csv
 import numpy as np
 import sklearn.metrics as metrics
-import collections
 
 class AverageMeter(object):
     """Computes and stores the average and current value
@@ -105,6 +106,21 @@ def is_top_k(predictions, label, k=1):
     top_k = sorted_args[-k:][::-1]
 
     return label in top_k
+
+def top_k_count(batch_predictions, labels, k=1):
+    correct_samples = [is_top_k(predictions, label, k) for predictions, label in zip(batch_predictions, labels)]
+    return len(np.nonzero(correct_samples)[0])
+
+def save_csv_table(path, table, header=None):
+    with open(path, 'w', newline='') as file:
+        wr = csv.writer(file, quoting=csv.QUOTE_ALL)
+
+        if header is not None:
+            wr.writerow(header)
+
+        for row in table:
+            wr.writerow(row)
+        
 
 class Filter(dict):
     def __init__(self, o=None, custom_filters={}, **kwArgs):

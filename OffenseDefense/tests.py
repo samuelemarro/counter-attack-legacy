@@ -1,4 +1,5 @@
 import warnings
+from typing import List
 import numpy as np
 import torch
 import foolbox
@@ -7,6 +8,7 @@ import OffenseDefense.utils as utils
 import OffenseDefense.batch_processing as batch_processing
 import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.loaders as loaders
+import OffenseDefense.distance_tools as distance_tools
 
 def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p, batch_worker=None, num_workers=50):
     average_anti_genuine = utils.AverageMeter()
@@ -71,8 +73,31 @@ def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p, batch_
         print('Average Anti Adversarial: {:2.2e}'.format(average_anti_adversarial.avg))
         print('Average Anti Genuine: {:2.2e}'.format(average_anti_genuine.avg))
 
+def accuracy_test(foolbox_model : foolbox.models.Model,
+                  loader : loaders.Loader,
+                  top_ks : List[int],
+                  verbose : bool = True):
+    accuracies = [utils.AverageMeter() for _ in range(len(top_ks))]
+
+    for images, labels in loader:
+        batch_predictions = foolbox_model.batch_predictions(images)
+
+        for i, top_k in enumerate(top_ks):
+            correct_samples_count = utils.top_k_count(batch_predictions, labels, top_k)
+            accuracies[i].update(1, correct_samples_count)
+            accuracies[i].update(0, len(images) - correct_samples_count)
+
+        if verbose:
+            for top_k in sorted(top_ks):
+                print('Top-{} Accuracy: {:2.2f}%'.format(top_k, accuracies[top_k].avg * 100.0))
+
+            print('\n============\n')
+
+    #Return accuracies instead of AverageMeters
+    return [accuracy.avg for accuracy in accuracies]
+
 def distance_comparison_test(foolbox_model : foolbox.models.Model,
-                    distance_tools,
+                    test_distance_tools,
                     p : np.float,
                     loader : loaders.Loader,
                     verbose : bool = True):
@@ -80,17 +105,17 @@ def distance_comparison_test(foolbox_model : foolbox.models.Model,
     final_distances = {}
     success_rates = {}
 
-    for distance_tool in distance_tools:
+    for distance_tool in test_distance_tools:
         final_distances[distance_tool.name] = []
         success_rates[distance_tool.name] = utils.AverageMeter()
     
     for images, labels in loader:
-
+        #Remove misclassified samples
         correct_classification_filter = batch_attack.get_correct_samples(foolbox_model, images, labels)
         images = correct_classification_filter['images']
         labels = correct_classification_filter['image_labels']
 
-        for distance_tool in distance_tools:
+        for distance_tool in test_distance_tools:
             distances = distance_tool.get_distances(images, labels, p)
             final_distances[distance_tool.name] += list(distances)
 
@@ -107,21 +132,19 @@ def distance_comparison_test(foolbox_model : foolbox.models.Model,
             failure_count = success_rates[distance_tool.name].count - success_rates[distance_tool.name].sum
             adjusted_median_distance = np.median(tool_distances + [np.Infinity] * failure_count)
             
-            print('{}:'.format(distance_tool.name))
-            print('Average Distance: {:2.2e}'.format(average_distance))
-            print('Median Distance: {:2.2e}'.format(median_distance))
-            print('Success Rate: {:2.2f}%'.format(success_rate * 100.0))
-            print('Adjusted Median Distance: {:2.2e}'.format(adjusted_median_distance))
+            if verbose:
+                print('{}:'.format(distance_tool.name))
+                print('Average Distance: {:2.2e}'.format(average_distance))
+                print('Median Distance: {:2.2e}'.format(median_distance))
+                print('Success Rate: {:2.2f}%'.format(success_rate * 100.0))
+                print('Adjusted Median Distance: {:2.2e}'.format(adjusted_median_distance))
 
-            print()
-            print('============')
-            print()
+                print('\n============\n')
 
-        print()
-        print('====================')
-        print()
+        if verbose:
+            print('\n====================\n')
 
-    #We're using AverageMeters, replace them with the final averages
+    #Replace AverageMeters with the final averages
     for key, value in success_rates.items():
         success_rates[key] = value.avg
 
@@ -132,7 +155,8 @@ def attack_test(foolbox_model : foolbox.models.Model,
                 attack : foolbox.attacks.Attack,
                 p : int,
                 batch_worker : batch_processing.BatchWorker = None,
-                num_workers : int = 50):
+                num_workers : int = 50,
+                verbose : bool = True):
 
     success_rate = utils.AverageMeter()
     distances = []
@@ -151,14 +175,13 @@ def attack_test(foolbox_model : foolbox.models.Model,
         median_distance = np.median(distances)
         adjusted_median_distance = np.median(distances + [np.Infinity] * failure_count)
             
-        print('Average Distance: {:2.2e}'.format(average_distance))
-        print('Median Distance: {:2.2e}'.format(median_distance))
-        print('Success Rate: {:2.2f}%'.format(success_rate.avg * 100.0))
-        print('Adjusted Median Distance: {:2.2e}'.format(adjusted_median_distance))
+        if verbose:
+            print('Average Distance: {:2.2e}'.format(average_distance))
+            print('Median Distance: {:2.2e}'.format(median_distance))
+            print('Success Rate: {:2.2f}%'.format(success_rate.avg * 100.0))
+            print('Adjusted Median Distance: {:2.2e}'.format(adjusted_median_distance))
 
-        print()
-        print('============')
-        print()
+            print('\n============\n')
 
     return success_rate.avg, distances
         

@@ -41,7 +41,7 @@ class AdversarialDataset(data.Dataset):
             return len(self.dataset)
         return self.count_limit
 
-def cifar10_trainloader(num_workers, batch_size, flip, crop, normalize, shuffle):
+def cifar10_train_loader(num_workers, batch_size, flip, crop, normalize, shuffle):
     transformations = [transforms.ToTensor()]
     if flip:
         transformations.append(transforms.RandomHorizontalFlip())
@@ -59,7 +59,7 @@ def cifar10_trainloader(num_workers, batch_size, flip, crop, normalize, shuffle)
                            shuffle=shuffle,
                            num_workers=num_workers)
 
-def cifar10_testloader(num_workers, batch_size, normalize, shuffle):
+def cifar10_test_loader(num_workers, batch_size, normalize, shuffle):
     transformations = [transforms.ToTensor()]
 
     if normalize:

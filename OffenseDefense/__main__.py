@@ -12,6 +12,7 @@ import OffenseDefense.distance_tools as distance_tools
 import OffenseDefense.loaders as loaders
 import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.attacks as attacks
+import OffenseDefense.training as training
 from OffenseDefense.pytorch_classification.models.cifar.densenet import DenseNet
 
 #NOTA: La precisione del floating point si traduce in un errore medio dello 0,01% (con punte dello 0,5%)
@@ -117,8 +118,8 @@ def image_test(foolbox_model, loader, adversarial_attack, anti_attack):
         
 
 def batch_main():
-    trainloader = model_tools.cifar10_trainloader(1, 10, flip=False, crop=False, normalize=False, shuffle=True)
-    testloader = model_tools.cifar10_testloader(1, 40, normalize=False, shuffle=True)
+    train_loader = model_tools.cifar10_train_loader(1, 10, flip=False, crop=False, normalize=False, shuffle=True)
+    test_loader = model_tools.cifar10_test_loader(1, 40, normalize=False, shuffle=True)
     
     model = prepare_model()
     model.eval()
@@ -144,8 +145,8 @@ def batch_main():
         adversarial_anti_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, anti_adversarial_criterion)
     #adversarial_anti_attack = FineTuningAttack(adversarial_attack, p)
 
-    #basic_test(foolbox_model, testloader, adversarial_attack, adversarial_anti_attack, p)
-    #tests.image_test(foolbox_model, testloader, adversarial_attack, adversarial_anti_attack)
+    #basic_test(foolbox_model, test_loader, adversarial_attack, adversarial_anti_attack, p)
+    #tests.image_test(foolbox_model, test_loader, adversarial_attack, adversarial_anti_attack)
     #direction_attack = attacks.RandomDirectionAttack(100, 100, 1e-2, 1e-5)
 
     direction_attack = attacks.RandomDirectionAttack(foolbox_model, foolbox.criteria.Misclassification(), p, 1000, 100, 0.05, 1e-7)
@@ -156,12 +157,16 @@ def batch_main():
     adversarial_distance_tool = distance_tools.AdversarialDistance(type(adversarial_attack).__name__, foolbox_model, adversarial_attack, batch_worker, num_workers)
     direction_distance_tool = distance_tools.AdversarialDistance(type(direction_attack).__name__, foolbox_model, direction_attack)
 
-    testloader = loaders.TorchLoader(testloader)
-    adversarial_loader = loaders.AdversarialLoader(testloader, foolbox_model, adversarial_attack, batch_worker, num_workers)
+    test_loader = loaders.TorchLoader(test_loader)
+    adversarial_loader = loaders.AdversarialLoader(test_loader, foolbox_model, adversarial_attack, True, batch_worker, num_workers)
     random_noise_loader = loaders.RandomNoiseLoader(foolbox_model, 0, 1, [3, 32, 32], 10, 20)
 
-    tests.distance_comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool], p, adversarial_loader, num_workers)
-    #tests.attack_test(foolbox_model, testloader, adversarial_attack, p, batch_worker, num_workers)
+    #tests.distance_comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool], p, adversarial_loader, num_workers)
+    #tests.attack_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
+    #model_tools.accuracy_test(foolbox_model, test_loader, set([1, 5]))
+
+    train_loader = loaders.TorchLoader(train_loader)
+    #training.train_torch(model, train_loader, torch.nn.CrossEntropyLoss(), torch.optim.SGD(model.parameters(), lr=0.1), training.MaxEpoch(2), True)
 
 
 
