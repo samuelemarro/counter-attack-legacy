@@ -22,5 +22,5 @@ class DistanceDetector(Detector):
         return self.distance_tool.get_distance(image, label, self.p)
 
     def get_scores(self, images):
-        labels = self.foolbox_model.batch_predictions(images)
+        labels = np.argmax(self.foolbox_model.batch_predictions(images), axis=1)
         return self.distance_tool.get_distances(images, labels, self.p)

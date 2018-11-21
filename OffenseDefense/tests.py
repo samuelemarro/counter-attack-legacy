@@ -4,6 +4,8 @@ import numpy as np
 import torch
 import foolbox
 import matplotlib.pyplot as plt
+import sklearn.metrics as metrics
+import OffenseDefense.detectors as detectors
 import OffenseDefense.utils as utils
 import OffenseDefense.batch_processing as batch_processing
 import OffenseDefense.batch_attack as batch_attack
@@ -185,3 +187,42 @@ def attack_test(foolbox_model : foolbox.models.Model,
 
     return success_rate.avg, distances
         
+def standard_detector_test(foolbox_model : foolbox.models.Model,
+                  loader : loaders.Loader,
+                  attack : foolbox.attacks.Attack,
+                  detector : detectors.Detector,
+                  batch_worker : batch_processing.BatchWorker = None,
+                  num_workers : int = 50,
+                  verbose : bool = True):
+    attack_success_rate = utils.AverageMeter()
+    genuine_scores = []
+    adversarial_scores = []
+
+    for images, labels in loader:
+        adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, batch_worker, num_workers)
+        
+        adversarials = adversarial_filter['adversarials']
+        failure_count = len(images) - len(adversarials)
+
+        attack_success_rate.update(1, len(adversarials))
+        attack_success_rate.update(0, failure_count)
+
+        #Note: We evaluate the detector on all the genuine samples,
+        #even the ones that could not be attacked
+        genuine_scores += list(detector.get_scores(images))
+        adversarial_scores += list(detector.get_scores(adversarials))
+            
+        if verbose:
+            fpr, tpr, thresholds = utils.roc_curve(genuine_scores, adversarial_scores)
+            best_threshold, best_tpr, best_fpr = utils.get_best_threshold(tpr, fpr, thresholds)
+            area_under_curve = metrics.auc(fpr, tpr)
+
+            print('Attack Success Rate: {:2.2f}%'.format(attack_success_rate.avg * 100.0))
+            print('Detector AUC: {:2.2f}%'.format(area_under_curve * 100.0))
+            print('Best Threshold: {:2.2e}'.format(best_threshold))
+            print('Best TPR: {:2.2f}%'.format(best_tpr * 100.0))
+            print('Best FPR: {:2.2f}%'.format(best_fpr * 100.0))
+
+            print('\n============\n')
+
+    return genuine_scores, adversarial_scores, attack_success_rate.avg

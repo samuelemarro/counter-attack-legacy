@@ -1,10 +1,15 @@
 import queue
 import logging
+import configparser
 import numpy as np
 import torch
 import torch.nn as nn
 import foolbox
 import matplotlib.pyplot as plt
+import torchvision
+import OffenseDefense
+import OffenseDefense.detectors as detectors
+import OffenseDefense.models as model
 import OffenseDefense.utils as utils
 import OffenseDefense.tests as tests
 import OffenseDefense.model_tools as model_tools
@@ -65,10 +70,6 @@ class TargetTop2Difference(foolbox.criteria.Criterion):
             print(difference)
 
         return difference > self.threshold
-        
-
-    
-
 
 def image_test(foolbox_model, loader, adversarial_attack, anti_attack):
     plt.ion()
@@ -115,11 +116,36 @@ def image_test(foolbox_model, loader, adversarial_attack, anti_attack):
         plt.pause(0.001)
 
 
-        
+def load_pretrained_model(model_name, dataset, path, download=True):
+    model_name = model_name.lower()
+    dataset = dataset.lower()
+
+    if dataset in ['cifar10', 'cifar100']:
+        model_module = OffenseDefense.models.cifar
+    elif dataset == 'imagenet':
+        if model_name in ['resnext', 'resnext50', 'resnext101', 'resnext152']:
+            model_module = OffenseDefense.models.imagenet
+        else:
+            #Pretrained ImageNet models published by Pytorch
+            return getattr(torchvision.models, model_name)(pretrained=True)
+
+    #Call the model_name constructor
+    model = getattr(model_module, model_name)()
+
+    #Find the correct download link
+    try:
+        config = configparser.ConfigParser()
+        config.read('model_download_links.ini')
+        download_link = config[dataset][model_name]
+    except KeyError:
+        raise ValueError('Unsupported model "{}" for dataset "{}". Check the available '
+                         'models in model_download_links.ini'.format(model_name, dataset))
+
+    #TODO: Complete
 
 def batch_main():
     train_loader = model_tools.cifar10_train_loader(1, 10, flip=False, crop=False, normalize=False, shuffle=True)
-    test_loader = model_tools.cifar10_test_loader(1, 40, normalize=False, shuffle=True)
+    test_loader = model_tools.cifar10_test_loader(1, 10, normalize=False, shuffle=True)
     
     model = prepare_model()
     model.eval()
@@ -165,9 +191,13 @@ def batch_main():
     #tests.attack_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
     #model_tools.accuracy_test(foolbox_model, test_loader, set([1, 5]))
 
-    train_loader = loaders.TorchLoader(train_loader)
+    #train_loader = loaders.TorchLoader(train_loader)
     #training.train_torch(model, train_loader, torch.nn.CrossEntropyLoss(), torch.optim.SGD(model.parameters(), lr=0.1), training.MaxEpoch(2), True)
+    
+    detector = detectors.DistanceDetector(foolbox_model, adversarial_distance_tool, p)
+    tests.standard_detector_test(foolbox_model, test_loader, adversarial_attack, detector, batch_worker, num_workers)
 
+    #load_pretrained_model('alexnet', 'cifar10', '')
 
 
 cifar_names = [

@@ -16,3 +16,4 @@
 * Complete setup.py
 * Test when there are no successful adversarial samples
 * Rename variables to encompass more than images?
+* Complete load_pretrained_model

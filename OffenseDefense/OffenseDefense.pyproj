@@ -49,6 +49,12 @@
     <Compile Include="models\pytorch\cifar\__init__.py" />
     <Compile Include="models\pytorch\imagenet\resnext.py" />
     <Compile Include="models\pytorch\imagenet\__init__.py" />
+    <Compile Include="models\pytorch\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="models\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Include="model_tools.py">
       <SubType>Code</SubType>
     </Compile>
@@ -112,6 +118,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="models\pytorch\LICENSE.txt" />
+    <Content Include="model_download_links.ini" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\checkpoint.pth.tar" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\log.eps" />
     <Content Include="pytorch_classification\checkpoints\cifar10\alexnet\log.txt" />
