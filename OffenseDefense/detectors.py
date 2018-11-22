@@ -4,9 +4,9 @@ import OffenseDefense.distance_tools as distance_tools
 
 class Detector:
     def get_score(self, image):
-        pass
+        raise NotImplementedError()
     def get_scores(self, images):
-        pass
+        raise NotImplementedError()
 
 class DistanceDetector(Detector):
     def __init__(self,

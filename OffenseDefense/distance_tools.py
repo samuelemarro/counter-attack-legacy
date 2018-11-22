@@ -41,3 +41,46 @@ class AdversarialDistance(DistanceTool):
         #which could not be attacked
         distances = utils.lp_distance(adversarial_filter['adversarials'], adversarial_filter['images'], p, True)
         return distances
+
+"""
+Returns the unnormalized L_p distance.
+
+If you're wondering what's going on: foolbox attacks accept
+a distance type instead of an actual object. So, if you want
+to use the MSE distance, you have to pass foolbox.distances.MSE.
+foolbox then calls the type and builds the distance (e.g. MSE(...)).
+This usually works well, but it means that we can't pass any other
+arguments to the distance. We therefore use this wrapper trick to 
+pass the argument 'p': we init and pass the LpDistance object.
+foolbox will attempt to create the distance by calling distance(...)
+However, since it's an instance, calls to the class are handled by
+__call__. In __call__, we init WrappedLpDistance with the provided
+arguments (in addition to p) and return it.
+"""
+class LpDistance(foolbox.distances.Distance):
+    class WrappedLpDistance(foolbox.distances.Distance):
+        def __init__(self, p, reference = None, other = None, bounds = None, value = None):
+            self.p = p
+            super().__init__(reference, other, bounds, value)
+
+        def _calculate(self):
+            value = utils.lp_distance(self.other, self.reference, self.p, False)
+            gradient = None
+            return value, gradient
+
+        @property
+        def gradient(self):
+            raise NotImplementedError
+        def name(self):
+            return 'L{} Distance'.format(self.p)
+
+    def __init__(self, p):
+        self.p = p
+    def __call__(self,
+                 reference=None,
+                 other=None,
+                 bounds=None,
+                 value=None):
+        return LpDistance.WrappedLpDistance(self.p, reference, other, bounds, value)
+    def _calculate(self):
+        raise NotImplementedError()

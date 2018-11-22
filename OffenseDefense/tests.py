@@ -226,3 +226,71 @@ def standard_detector_test(foolbox_model : foolbox.models.Model,
             print('\n============\n')
 
     return genuine_scores, adversarial_scores, attack_success_rate.avg
+
+def parallelization_test(foolbox_model : foolbox.models.Model,
+                              loader : loaders.Loader,
+                              attack : foolbox.attacks.Attack,
+                              p : int,
+                              batch_worker : batch_processing.BatchWorker,
+                              num_workers : int = 50,
+                              verbose : bool = True):
+
+    standard_success_rate = utils.AverageMeter()
+    parallel_success_rate = utils.AverageMeter()
+    standard_distances = []
+    parallel_distances = []
+
+    for images, labels in loader:
+        #Run the parallel attack
+        parallel_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, batch_worker, num_workers)
+        parallel_adversarials = parallel_adversarial_filter['adversarials']
+        parallel_failure_count = len(images) - len(parallel_adversarials)
+
+        parallel_success_rate.update(1, len(parallel_adversarials))
+        parallel_success_rate.update(0, parallel_failure_count)
+        parallel_distances += list(utils.lp_distance(parallel_adversarial_filter['adversarials'], parallel_adversarial_filter['images'], p, True))
+
+        #Run the standard attack
+        standard_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack)
+        standard_adversarials = standard_adversarial_filter['adversarials']
+        standard_failure_count = len(images) - len(standard_adversarials)
+
+        standard_success_rate.update(1, len(standard_adversarials))
+        standard_success_rate.update(0, standard_failure_count)
+
+        standard_distances += list(utils.lp_distance(standard_adversarial_filter['adversarials'], standard_adversarial_filter['images'], p, True))
+            
+        if verbose:
+            standard_average_distance = np.average(standard_distances)
+            standard_median_distance = np.median(standard_distances)
+            standard_adjusted_median_distance = np.median(standard_distances + [np.Infinity] * standard_failure_count)
+            print('Average Standard Distance: {:2.5e}'.format(standard_average_distance))
+            print('Median Standard Distance: {:2.5e}'.format(standard_median_distance))
+            print('Standard Success Rate: {:2.5f}%'.format(standard_success_rate.avg * 100.0))
+            print('Standard Adjusted Median Distance: {:2.5e}'.format(standard_adjusted_median_distance))
+
+            print('\n')
+
+            parallel_average_distance = np.average(parallel_distances)
+            parallel_median_distance = np.median(parallel_distances)
+            parallel_adjusted_median_distance = np.median(parallel_distances + [np.Infinity] * parallel_failure_count)
+            print('Parallel Average Distance: {:2.5e}'.format(parallel_average_distance))
+            print('Parallel Median Distance: {:2.5e}'.format(parallel_median_distance))
+            print('Parallel Success Rate: {:2.5f}%'.format(parallel_success_rate.avg * 100.0))
+            print('Parallel Adjusted Median Distance: {:2.5e}'.format(parallel_adjusted_median_distance))
+
+            print('\n')
+
+            average_distance_difference = (parallel_average_distance - standard_average_distance) / standard_average_distance
+            median_distance_difference = (parallel_median_distance - standard_median_distance) / standard_median_distance
+            success_rate_difference = (parallel_success_rate.avg - standard_success_rate.avg) / standard_success_rate.avg
+            adjusted_median_distance_difference = (parallel_adjusted_median_distance - standard_adjusted_median_distance) / standard_adjusted_median_distance
+            print('Average Distance Relative Difference: {:2.5f}%'.format(average_distance_difference * 100.0))
+            print('Median Distance Relative Difference: {:2.5f}%'.format(median_distance_difference * 100.0))
+            print('Success Rate Relative Difference: {:2.5f}%'.format(success_rate_difference * 100.0))
+            print('Adjusted Median Distance Relative Difference: {:2.5f}%'.format(adjusted_median_distance_difference * 100.0))
+
+
+            print('\n============\n')
+
+    return standard_success_rate.avg, standard_distances, parallel_success_rate.avg, parallel_distances

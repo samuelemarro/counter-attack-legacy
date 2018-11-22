@@ -104,7 +104,8 @@ def run_individual_attack(attack, images, labels):
     for image, label in zip(images, labels):
         adversarial = attack(image, label)
         adversarials.append(adversarial)
-    return np.array(adversarials)
+
+    return adversarials
 
 def get_correct_samples(foolbox_model : foolbox.models.PyTorchModel,
                         images : np.ndarray,
@@ -146,7 +147,6 @@ def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
 
     #Convert to Numpy array after the failed samples have been removed
     filter['adversarials'] = np.array(filter['adversarials'])
-
     filter['adversarial_predictions'] = foolbox_model.batch_predictions(filter['adversarials'])
     filter['adversarial_labels'] = np.argmax(filter['adversarial_predictions'], axis=-1)
 

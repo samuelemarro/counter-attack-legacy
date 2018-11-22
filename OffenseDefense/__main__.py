@@ -157,18 +157,18 @@ def batch_main():
     adversarial_criterion = foolbox.criteria.Misclassification()
     adversarial_criterion = foolbox.criteria.CombinedCriteria(adversarial_criterion, TargetTop2Difference(1e-5))
     if p == 2:
-        adversarial_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, adversarial_criterion)
+        adversarial_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, adversarial_criterion, distance_tools.LpDistance(p))
     elif p == np.Infinity:
-        adversarial_attack = foolbox.attacks.DeepFoolL2Attack(foolbox_model, adversarial_criterion)
+        adversarial_attack = foolbox.attacks.DeepFoolL2Attack(foolbox_model, adversarial_criterion, distance_tools.LpDistance(p))
     #adversarial_attack = attacks.RandomDirectionAttack(100, 100, 1e-2, 1e-5, foolbox_model, adversarial_criterion)
     #adversarial_attack = FineTuningAttack(adversarial_attack, p)
 
     anti_adversarial_criterion = foolbox.criteria.Misclassification()
     #anti_adversarial_criterion = foolbox.criteria.CombinedCriteria(anti_adversarial_criterion, TargetTop2Difference(1e-5))
     if p == 2:
-        adversarial_anti_attack = foolbox.attacks.DeepFoolL2Attack(foolbox_model, anti_adversarial_criterion)
+        adversarial_anti_attack = foolbox.attacks.DeepFoolL2Attack(foolbox_model, anti_adversarial_criterion, distance_tools.LpDistance(p))
     elif p == np.Infinity:
-        adversarial_anti_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, anti_adversarial_criterion)
+        adversarial_anti_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, anti_adversarial_criterion, distance_tools.LpDistance(p))
     #adversarial_anti_attack = FineTuningAttack(adversarial_attack, p)
 
     #basic_test(foolbox_model, test_loader, adversarial_attack, adversarial_anti_attack, p)
@@ -176,28 +176,31 @@ def batch_main():
     #direction_attack = attacks.RandomDirectionAttack(100, 100, 1e-2, 1e-5)
 
     direction_attack = attacks.RandomDirectionAttack(foolbox_model, foolbox.criteria.Misclassification(), p, 1000, 100, 0.05, 1e-7)
+    black_box_attack = foolbox.attacks.BoundaryAttack(foolbox_model, foolbox.criteria.Misclassification(), distance=distance_tools.LpDistance(p))
 
     batch_worker = batch_attack.PyTorchWorker(model)
     num_workers = 50
 
     adversarial_distance_tool = distance_tools.AdversarialDistance(type(adversarial_attack).__name__, foolbox_model, adversarial_attack, batch_worker, num_workers)
     direction_distance_tool = distance_tools.AdversarialDistance(type(direction_attack).__name__, foolbox_model, direction_attack)
+    black_box_distance_tool = distance_tools.AdversarialDistance(type(black_box_attack).__name__, foolbox_model, direction_attack)
 
     test_loader = loaders.TorchLoader(test_loader)
     adversarial_loader = loaders.AdversarialLoader(test_loader, foolbox_model, adversarial_attack, True, batch_worker, num_workers)
     random_noise_loader = loaders.RandomNoiseLoader(foolbox_model, 0, 1, [3, 32, 32], 10, 20)
 
-    #tests.distance_comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool], p, adversarial_loader, num_workers)
+    #tests.distance_comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool, black_box_distance_tool], p, adversarial_loader, num_workers)
     #tests.attack_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
     #model_tools.accuracy_test(foolbox_model, test_loader, set([1, 5]))
 
     #train_loader = loaders.TorchLoader(train_loader)
     #training.train_torch(model, train_loader, torch.nn.CrossEntropyLoss(), torch.optim.SGD(model.parameters(), lr=0.1), training.MaxEpoch(2), True)
     
-    detector = detectors.DistanceDetector(foolbox_model, adversarial_distance_tool, p)
-    tests.standard_detector_test(foolbox_model, test_loader, adversarial_attack, detector, batch_worker, num_workers)
+    #detector = detectors.DistanceDetector(foolbox_model, adversarial_distance_tool, p)
+    #tests.standard_detector_test(foolbox_model, test_loader, adversarial_attack, detector, batch_worker, num_workers)
 
     #load_pretrained_model('alexnet', 'cifar10', '')
+    tests.parallelization_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
 
 
 cifar_names = [

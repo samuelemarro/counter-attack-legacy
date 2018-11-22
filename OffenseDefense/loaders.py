@@ -6,7 +6,7 @@ class Loader:
     def __iter__(self):
         return self
     def __next__(self):
-        pass
+        raise NotImplementedError()
 
 class TorchLoader(Loader):
     def __init__(self, torch_loader):

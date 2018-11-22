@@ -1,10 +1,12 @@
+import logging
 import numpy as np
 import foolbox
 import OffenseDefense.utils as utils
+import OffenseDefense.distance_tools as distance_tools
 
 class RandomDirectionAttack(foolbox.attacks.Attack):
     def __init__(self, model, criterion, p, directions, search_steps, search_epsilon, finetuning_precision):
-        super().__init__(model, criterion, distance=foolbox.distances.MSE, threshold=None)
+        super().__init__(model, criterion, distance=distance_tools.LpDistance(p), threshold=None)
         self.p = p
         self.directions = directions
         self.search_steps = search_steps
@@ -18,7 +20,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         directions /= np.linalg.norm(directions, axis=0)
         return directions.astype(np.float32)
 
-    #Avoids Out of Memory errors by feeding n samples each time
+    #Avoids Out of Memory errors by splitting the batch in minibatches
     def _safe_batch_predictions(self, foolbox_adversarial, images, n=1):
         batch_predictions = []
         batch_is_adversarial = []
