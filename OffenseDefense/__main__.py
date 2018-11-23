@@ -42,35 +42,6 @@ def prepare_model():
 
     return model
 
-
-
-
-"""
-Requires that the difference between the top class and the following one (regardless of
-whether the image is adversarial) is above a threshold. 
-Important: This criterion doesn't check if the image is adversarial, you're supposed to
-combine it with another criterion using foolbox.criteria.CombinedCriteria.
-
-Useful to prevent bugs due to approximation errors (e.g. when a 1e-7 difference
-between the 1st and 2nd prediction causes the top class to be sometimes different).
-Usually a 1e-5 threshold is sufficient. If you're not sure, assert that the top labels
-of the genuine images are different from the top labels of the adversarial images.
-
-Warning: Using this criterion makes the attack slightly overshoot. This might not be
-a problem for adversarial attacks themselves, but it might be if you're estimating the
-distance to the decision boundary. We therefore recommend using it only when it's
-truly necessary.
-"""
-class TargetTop2Difference(foolbox.criteria.Criterion):
-    def __init__(self, threshold):
-        self.threshold = threshold
-    def is_adversarial(self, predictions, label):
-        difference = utils.top_k_difference(predictions, 2)
-        if difference < self.threshold:
-            print(difference)
-
-        return difference > self.threshold
-
 def image_test(foolbox_model, loader, adversarial_attack, anti_attack):
     plt.ion()
     for i, data in enumerate(loader):
@@ -155,7 +126,6 @@ def batch_main():
     p = np.Infinity
 
     adversarial_criterion = foolbox.criteria.Misclassification()
-    adversarial_criterion = foolbox.criteria.CombinedCriteria(adversarial_criterion, TargetTop2Difference(1e-5))
     if p == 2:
         adversarial_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, adversarial_criterion, distance_tools.LpDistance(p))
     elif p == np.Infinity:
@@ -164,14 +134,12 @@ def batch_main():
     #adversarial_attack = FineTuningAttack(adversarial_attack, p)
 
     anti_adversarial_criterion = foolbox.criteria.Misclassification()
-    #anti_adversarial_criterion = foolbox.criteria.CombinedCriteria(anti_adversarial_criterion, TargetTop2Difference(1e-5))
     if p == 2:
         adversarial_anti_attack = foolbox.attacks.DeepFoolL2Attack(foolbox_model, anti_adversarial_criterion, distance_tools.LpDistance(p))
     elif p == np.Infinity:
         adversarial_anti_attack = foolbox.attacks.DeepFoolLinfinityAttack(foolbox_model, anti_adversarial_criterion, distance_tools.LpDistance(p))
     #adversarial_anti_attack = FineTuningAttack(adversarial_attack, p)
 
-    #basic_test(foolbox_model, test_loader, adversarial_attack, adversarial_anti_attack, p)
     #tests.image_test(foolbox_model, test_loader, adversarial_attack, adversarial_anti_attack)
     #direction_attack = attacks.RandomDirectionAttack(100, 100, 1e-2, 1e-5)
 

@@ -12,69 +12,6 @@ import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.loaders as loaders
 import OffenseDefense.distance_tools as distance_tools
 
-def basic_test(foolbox_model, loader, adversarial_attack, anti_attack, p, batch_worker=None, num_workers=50):
-    average_anti_genuine = utils.AverageMeter()
-    average_anti_adversarial = utils.AverageMeter()
-    average_adversarial = utils.AverageMeter()
-
-    classification_rate = utils.AverageMeter()
-    adversarial_rate = utils.AverageMeter()
-    anti_rate = utils.AverageMeter()
-
-    warnings.filterwarnings('error', 'Not running')
-    
-    for data in loader:
-        images, labels = data
-        images = images.numpy()
-        labels = labels.numpy()
-        
-        original_count = len(images)
-
-        filter, anti_genuine_count, anti_adversarial_count = batch_attack.get_anti_adversarials(foolbox_model, images, labels, adversarial_attack, anti_attack, batch_worker, num_workers)
-
-        images = filter['images']
-        labels = filter['image_labels']
-        adversarials = filter['adversarials']
-        anti_genuines = filter['anti_genuines']
-        anti_adversarials = filter['anti_adversarials']
-        classification_count = filter.filter_stats['successful_classification']
-        adversarial_count = filter.filter_stats['successful_adversarial']
-
-        print(filter.filter_stats)
-        #print([np.average(x) for x in images])
-        #print([np.average(x) for x in adversarials])
-        #print([np.average(x) for x in anti_genuines])
-        #print([np.average(x) for x in anti_adversarials])
-
-        print(adversarials.shape[0])
-        print(anti_adversarials.shape[0])
-        print(anti_genuines.shape[0])
-
-        classification_rate.update(1, classification_count)
-        classification_rate.update(0, original_count - classification_count)
-        adversarial_rate.update(1, adversarial_count)
-        adversarial_rate.update(0, classification_count - adversarial_count)
-        anti_rate.update(1, anti_genuine_count)
-        anti_rate.update(1, anti_adversarial_count)
-        anti_rate.update(0, adversarial_count - anti_genuine_count)
-        anti_rate.update(0, adversarial_count - anti_adversarial_count)
-
-        #Compute the distances
-        adversarial_distances = utils.lp_distance(adversarials, images, p, True)
-        anti_adversarial_distances = utils.lp_distance(adversarials, anti_adversarials, p, True)
-        anti_genuine_distances = utils.lp_distance(images, anti_genuines, p, True)
-
-        #print('Distances:')
-        #print(adversarial_distances)
-
-        average_adversarial.update(np.sum(adversarial_distances), adversarial_distances.shape[0])
-        average_anti_adversarial.update(np.sum(anti_adversarial_distances), anti_adversarial_distances.shape[0])
-        average_anti_genuine.update(np.sum(anti_genuine_distances), anti_genuine_distances.shape[0])
-
-        print('Average Adversarial: {:2.2e}'.format(average_adversarial.avg))
-        print('Average Anti Adversarial: {:2.2e}'.format(average_anti_adversarial.avg))
-        print('Average Anti Genuine: {:2.2e}'.format(average_anti_genuine.avg))
-
 def accuracy_test(foolbox_model : foolbox.models.Model,
                   loader : loaders.Loader,
                   top_ks : List[int],
@@ -266,7 +203,7 @@ def parallelization_test(foolbox_model : foolbox.models.Model,
             standard_adjusted_median_distance = np.median(standard_distances + [np.Infinity] * standard_failure_count)
             print('Average Standard Distance: {:2.5e}'.format(standard_average_distance))
             print('Median Standard Distance: {:2.5e}'.format(standard_median_distance))
-            print('Standard Success Rate: {:2.5f}%'.format(standard_success_rate.avg * 100.0))
+            print('Standard Success Rate: {:2.2f}%'.format(standard_success_rate.avg * 100.0))
             print('Standard Adjusted Median Distance: {:2.5e}'.format(standard_adjusted_median_distance))
 
             print('\n')
@@ -276,7 +213,7 @@ def parallelization_test(foolbox_model : foolbox.models.Model,
             parallel_adjusted_median_distance = np.median(parallel_distances + [np.Infinity] * parallel_failure_count)
             print('Parallel Average Distance: {:2.5e}'.format(parallel_average_distance))
             print('Parallel Median Distance: {:2.5e}'.format(parallel_median_distance))
-            print('Parallel Success Rate: {:2.5f}%'.format(parallel_success_rate.avg * 100.0))
+            print('Parallel Success Rate: {:2.2f}%'.format(parallel_success_rate.avg * 100.0))
             print('Parallel Adjusted Median Distance: {:2.5e}'.format(parallel_adjusted_median_distance))
 
             print('\n')

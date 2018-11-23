@@ -123,14 +123,18 @@ def get_correct_samples(foolbox_model : foolbox.models.PyTorchModel,
 
     return filter
 
+"""
+Finds the adversarial samples.
 
+Note: Some adversarial samples might sometimes be non-adversarial, due to the fact that
+they're close to the boundary and can switch class depending on the approximation.
+"""
 def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
                      images : np.ndarray,
                      labels : np.ndarray,
                      adversarial_attack : foolbox.attacks.Attack,
                      batch_worker : batch_processing.BatchWorker = None,
-                     num_workers: int = 50,
-                     adversarial_approximation_threshold: float = None):
+                     num_workers: int = 50):
     filter = get_correct_samples(foolbox_model, images, labels)
 
     if batch_worker is not None:
@@ -150,10 +154,6 @@ def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
     filter['adversarial_predictions'] = foolbox_model.batch_predictions(filter['adversarials'])
     filter['adversarial_labels'] = np.argmax(filter['adversarial_predictions'], axis=-1)
 
-    if adversarial_approximation_threshold is not None:
-        for x in filter['adversarial_predictions']:
-            assert utils.top_k_difference(x, 2) > adversarial_approximation_threshold
-
     return filter
 
 def get_anti_adversarials(foolbox_model : foolbox.models.PyTorchModel,
@@ -162,17 +162,14 @@ def get_anti_adversarials(foolbox_model : foolbox.models.PyTorchModel,
                           adversarial_attack : foolbox.attacks.Attack,
                           anti_attack : foolbox.attacks.Attack,
                           batch_worker : batch_processing.BatchWorker = None,
-                          num_workers: int = 50,
-                          adversarial_approximation_threshold : float = 1e-6,
-                          anti_adversarial_approximation_threshold : float = None):
+                          num_workers: int = 50):
 
     filter = get_adversarials(foolbox_model,
                               images,
                               labels,
                               adversarial_attack,
                               batch_worker,
-                              num_workers,
-                              adversarial_approximation_threshold)
+                              num_workers)
 
     print('Anti-Genuines')
     if batch_worker is not None:
@@ -210,15 +207,5 @@ def get_anti_adversarials(foolbox_model : foolbox.models.PyTorchModel,
     filter['anti_genuine_labels'] = np.argmax(filter['anti_genuine_predictions'], axis=-1)
     filter['anti_adversarial_predictions'] = foolbox_model.batch_predictions(filter['anti_adversarials'])
     filter['anti_adversarial_labels'] = np.argmax(filter['anti_adversarial_predictions'], axis=-1)
-
-    #These asserts fail only when the samples are so close to the boundary that the
-    #nondeterministic approximations by CUDA cause a difference in predictions (around 1e-6)
-    #that causes the top class to be different. Since this doesn't concern us (we only want to
-    #estimate the distance), we default to not checking
-    if anti_adversarial_approximation_threshold is not None:
-        for x in filter['anti_genuine_predictions']:
-            assert utils.top_k_difference(x, 2) > adversarial_approximation_threshold
-        for x in filter['anti_adversarial_predictions']:
-            assert utils.top_k_difference(x, 2) > adversarial_approximation_threshold
 
     return filter, len(successful_anti_genuines), len(successful_anti_adversarials)

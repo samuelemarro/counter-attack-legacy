@@ -97,10 +97,6 @@ def lp_distance(x, y, p, batch, broadcast=True):
     else:
         return single_image(x - y)
 
-def top_k_difference(x, k=2):
-    sorted_x = np.sort(x)#Sort in ascending order
-    return sorted_x[-1] - sorted_x[-k]
-
 def is_top_k(predictions, label, k=1):
     sorted_args = np.argsort(predictions)
     top_k = sorted_args[-k:][::-1]
