@@ -5,13 +5,7 @@ import torch
 import foolbox
 import matplotlib.pyplot as plt
 import sklearn.metrics as metrics
-import OffenseDefense.detectors as detectors
-import OffenseDefense.utils as utils
-import OffenseDefense.batch_processing as batch_processing
-import OffenseDefense.batch_attack as batch_attack
-import OffenseDefense.loaders as loaders
-import OffenseDefense.distance_tools as distance_tools
-import OffenseDefense.rejectors as rejectors
+from . import batch_attack, batch_processing, detectors, distance_tools, loaders, rejectors, utils
 
 def accuracy_test(foolbox_model : foolbox.models.Model,
                   loader : loaders.Loader,

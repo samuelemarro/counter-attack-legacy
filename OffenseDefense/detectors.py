@@ -1,6 +1,6 @@
 import numpy as np
 import foolbox
-import OffenseDefense.distance_tools as distance_tools
+from . import distance_tools
 
 class Detector:
     def get_score(self, image):

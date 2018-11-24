@@ -1,6 +1,6 @@
 import collections
 import numpy as np
-import OffenseDefense.batch_attack as batch_attack
+from . import batch_attack
 
 class Loader:
     def __iter__(self):

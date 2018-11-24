@@ -1,8 +1,6 @@
 import foolbox
 import numpy as np
-import OffenseDefense.batch_processing as batch_processing
-import OffenseDefense.batch_attack as batch_attack
-import OffenseDefense.utils as utils
+from . import batch_attack, batch_processing, utils
 
 class DistanceTool:
     def __init__(self, name):

@@ -3,7 +3,8 @@ import torch.utils.data as data
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import numpy as np
-import OffenseDefense.utils as utils
+
+from . import utils
 
 class Preprocessing(torch.nn.Module):
     def __init__(self, means, stds):

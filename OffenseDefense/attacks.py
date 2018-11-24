@@ -1,8 +1,7 @@
 import logging
 import numpy as np
 import foolbox
-import OffenseDefense.utils as utils
-import OffenseDefense.distance_tools as distance_tools
+from . import distance_tools, utils
 
 class RandomDirectionAttack(foolbox.attacks.Attack):
     def __init__(self, model, criterion, p, directions, search_steps, search_epsilon, finetuning_precision):

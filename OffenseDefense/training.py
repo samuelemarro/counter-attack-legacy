@@ -1,5 +1,5 @@
 import torch
-import OffenseDefense.utils as utils
+from . import utils
 
 class StopCriterion:
     #Note: epoch is 1-indexed because 0 is the pre-epoch

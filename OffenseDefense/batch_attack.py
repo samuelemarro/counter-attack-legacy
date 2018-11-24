@@ -1,9 +1,8 @@
 import queue
 import numpy as np
 import foolbox
-import OffenseDefense.batch_processing as batch_processing
-import OffenseDefense.utils as utils
 import torch
+from . import batch_processing, utils
 
 class PyTorchWorker(batch_processing.BatchWorker):
     def __init__(self, model):
