@@ -21,8 +21,7 @@ import OffenseDefense.tests as tests
 import OffenseDefense.training as training
 import OffenseDefense.utils as utils
 import OffenseDefense.rejectors as rejectors
-from OffenseDefense.pytorch_classification.models.cifar.densenet import \
-    DenseNet
+from OffenseDefense.models.pytorch.cifar.densenet import DenseNet
 
 #NOTA: La precisione del floating point si traduce in un errore medio dello 0,01% (con punte dello 0,5%)
 #Questo errore può essere diminuito passando al double, ma è un suicidio computazionale perché raddoppia la
@@ -49,10 +48,10 @@ def load_pretrained_model(model_name, dataset, path, download=True):
     dataset = dataset.lower()
 
     if dataset in ['cifar10', 'cifar100']:
-        model_module = OffenseDefense.models.cifar
+        model_module = OffenseDefense.models.pytorch.cifar
     elif dataset == 'imagenet':
         if model_name in ['resnext', 'resnext50', 'resnext101', 'resnext152']:
-            model_module = OffenseDefense.models.imagenet
+            model_module = OffenseDefense.models.pytorch.imagenet
         else:
             #Pretrained ImageNet models published by Pytorch
             return getattr(torchvision.models, model_name)(pretrained=True)

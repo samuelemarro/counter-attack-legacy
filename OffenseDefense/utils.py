@@ -6,8 +6,8 @@ import numpy as np
 import sklearn.metrics as metrics
 
 class AverageMeter(object):
-    """Computes and stores the average and current value
-       Imported from https://github.com/pytorch/examples/blob/master/imagenet/main.py#L247-L262
+    """
+    Computes and stores the average and current value.
     """
     def __init__(self):
         self.reset()
@@ -26,7 +26,8 @@ class AverageMeter(object):
             self.avg = self.sum / self.count
 
 def save_zip(object, filename, protocol=0):
-    """Saves a compressed object to disk
+    """
+    Saves a compressed object to disk
     """
     file = gzip.GzipFile(filename, 'wb')
     pickled = pickle.dumps(object, protocol)
@@ -34,7 +35,8 @@ def save_zip(object, filename, protocol=0):
     file.close()
 
 def load_zip(filename):
-    """Loads a compressed object from disk
+    """
+    Loads a compressed object from disk
     """
     file = gzip.GzipFile(filename, 'rb')
     buffer = b""
@@ -70,11 +72,11 @@ def get_best_threshold(true_positive_rates, false_positive_rates, thresholds):
     best_threshold_index = np.argmax(youden_indices, 0)
     return thresholds[best_threshold_index].item(), true_positive_rates[best_threshold_index].item(), false_positive_rates[best_threshold_index].item()
 
-"""
-Computes the L_p distance between two points. Works with rank 3 matrices and batches,
-unlike numpy.linanlg.norm
-"""
 def lp_distance(x, y, p, batch, broadcast=True):
+    """
+    Computes the L_p distance between two points. Works with matrices
+    of rank above 2 and supports batches, unlike numpy.linanlg.norm
+    """
     if p < 0:
         raise ValueError('p must be positive or zero')
 
