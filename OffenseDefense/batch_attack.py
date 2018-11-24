@@ -110,18 +110,18 @@ def run_individual_attack(attack, images, labels):
 def get_correct_samples(foolbox_model : foolbox.models.PyTorchModel,
                         images : np.ndarray,
                         labels : np.ndarray):
-    filter = utils.Filter()
-    filter['images'] = images
-    filter['ground_truth_labels'] = labels
+    _filter = utils.Filter()
+    _filter['images'] = images
+    _filter['ground_truth_labels'] = labels
 
-    filter['image_predictions'] = foolbox_model.batch_predictions(filter['images'])
-    filter['image_labels'] = np.argmax(filter['image_predictions'], axis=-1)
-    correctly_classified = np.nonzero(np.equal(filter['image_labels'],
-                                               filter['ground_truth_labels']))[0]
+    _filter['image_predictions'] = foolbox_model.batch_predictions(_filter['images'])
+    _filter['image_labels'] = np.argmax(_filter['image_predictions'], axis=-1)
+    correctly_classified = np.nonzero(np.equal(_filter['image_labels'],
+                                               _filter['ground_truth_labels']))[0]
     
-    filter.filter(correctly_classified, 'successful_classification')
+    _filter.filter(correctly_classified, 'successful_classification')
 
-    return filter
+    return _filter
 
 """
 Finds the adversarial samples.
@@ -133,79 +133,66 @@ def get_adversarials(foolbox_model : foolbox.models.PyTorchModel,
                      images : np.ndarray,
                      labels : np.ndarray,
                      adversarial_attack : foolbox.attacks.Attack,
+                     remove_misclassified : bool,
+                     remove_failed : bool,
                      batch_worker : batch_processing.BatchWorker = None,
                      num_workers: int = 50):
-    filter = get_correct_samples(foolbox_model, images, labels)
+    if remove_misclassified:
+        _filter = get_correct_samples(foolbox_model, images, labels)
+
+        #If there are no correctly classified samples, return early
+        if len(_filter['images']) == 0:
+            _filter['adversarials'] = []
+            _filter['adversarial_predictions'] = []
+            _filter['adversarial_labels'] = []
+            return _filter
+
+    else:
+        _filter = utils.Filter()
+        _filter['images'] = images
+        _filter['image_labels'] = labels
 
     if batch_worker is not None:
-        filter['adversarials'] = run_batch_attack(foolbox_model,
+        _filter['adversarials'] = run_batch_attack(foolbox_model,
                                                   batch_worker,
                                                   adversarial_attack,
-                                                  filter['images'],
-                                                  filter['image_labels'],
+                                                  _filter['images'],
+                                                  _filter['image_labels'],
                                                   num_workers=num_workers)
     else:
-        filter['adversarials'] = run_individual_attack(adversarial_attack, filter['images'], filter['image_labels'])
-    successful_adversarials = [i for i in range(len(filter['adversarials'])) if filter['adversarials'][i] is not None]
-    filter.filter(successful_adversarials, 'successful_adversarial')
+        _filter['adversarials'] = run_individual_attack(adversarial_attack, _filter['images'], _filter['image_labels'])
 
-    #Convert to Numpy array after the failed samples have been removed
-    filter['adversarials'] = np.array(filter['adversarials'])
-    filter['adversarial_predictions'] = foolbox_model.batch_predictions(filter['adversarials'])
-    filter['adversarial_labels'] = np.argmax(filter['adversarial_predictions'], axis=-1)
+    successful_adversarial_indices = [i for i in range(len(_filter['adversarials'])) if _filter['adversarials'][i] is not None]
+    successful_adversarial_indices = np.array(successful_adversarial_indices, dtype=np.int)
+    
+    if remove_failed:
+        #If there are no successful attacks, return early
+        if len(successful_adversarial_indices) == 0:
+            _filter['adversarials'] = []
+            _filter['adversarial_predictions'] = []
+            _filter['adversarial_labels'] = []
+            return _filter
 
-    return filter
 
-def get_anti_adversarials(foolbox_model : foolbox.models.PyTorchModel,
-                          images : np.ndarray,
-                          labels : np.ndarray,
-                          adversarial_attack : foolbox.attacks.Attack,
-                          anti_attack : foolbox.attacks.Attack,
-                          batch_worker : batch_processing.BatchWorker = None,
-                          num_workers: int = 50):
+        _filter.filter(successful_adversarial_indices, 'successful_adversarial')
 
-    filter = get_adversarials(foolbox_model,
-                              images,
-                              labels,
-                              adversarial_attack,
-                              batch_worker,
-                              num_workers)
+        #Convert to Numpy array after the failed samples have been removed
+        _filter['adversarials'] = np.array(_filter['adversarials'])
 
-    print('Anti-Genuines')
-    if batch_worker is not None:
-        filter['anti_genuines'] = run_batch_attack(foolbox_model,
-                                                   batch_worker,
-                                                   anti_attack,
-                                                   filter['images'],
-                                                   filter['image_labels'],
-                                                   num_workers=num_workers)
+        _filter['adversarial_predictions'] = foolbox_model.batch_predictions(_filter['adversarials'])
+        _filter['adversarial_labels'] = np.argmax(_filter['adversarial_predictions'], axis=1)
     else:
-        filter['anti_genuines'] = run_individual_attack(anti_attack, filter['images'], filter['image_labels'])
-    successful_anti_genuines = np.array([i for i in range(len(filter['anti_genuines'])) if filter['anti_genuines'][i] is not None], np.int32)
+        _filter['adversarial_predictions'] = [None] * len(_filter['adversarials'])
+        _filter['adversarial_labels'] = [None] * len(_filter['adversarials'])
 
-    print('Anti-Adversarials')
-    if batch_worker is not None:
-        filter['anti_adversarials'] = run_batch_attack(foolbox_model,
-                                                       batch_worker,
-                                                       anti_attack,
-                                                       filter['adversarials'],
-                                                       filter['adversarial_labels'],
-                                                       num_workers=num_workers)
-    else:
-        filter['anti_adversarials'] = run_individual_attack(anti_attack, filter['adversarials'], filter['adversarial_labels'])
+        #If there are no successful attacks, don't get the predictions and the labels
+        if len(successful_adversarial_indices) > 0:
+            successful_adversarials = [_filter['adversarials'][i] for i in successful_adversarial_indices]
+            successful_adversarials = np.array(successful_adversarials)
+            adversarial_batch_predictions = foolbox_model.batch_predictions(successful_adversarials)
+            
+            for i, original_index in enumerate(successful_adversarial_indices):
+                _filter['adversarial_predictions'][original_index] = adversarial_batch_predictions[i]
+                _filter['adversarial_labels'][original_index] = np.argmax(_filter['adversarial_predictions'][original_index])
 
-    successful_anti_adversarials = np.array([i for i in range(len(filter['anti_adversarials'])) if filter['anti_adversarials'][i] is not None], np.int32)
-
-    successful_intersection = np.intersect1d(successful_anti_genuines, successful_anti_adversarials)
-    filter.filter(successful_intersection, 'successful_intersection')
-
-    #Convert to Numpy array after the failed samples have been removed
-    filter['anti_genuines'] = np.array(filter['anti_genuines'])
-    filter['anti_adversarials'] = np.array(filter['anti_adversarials'])
-
-    filter['anti_genuine_predictions'] = foolbox_model.batch_predictions(filter['anti_genuines'])
-    filter['anti_genuine_labels'] = np.argmax(filter['anti_genuine_predictions'], axis=-1)
-    filter['anti_adversarial_predictions'] = foolbox_model.batch_predictions(filter['anti_adversarials'])
-    filter['anti_adversarial_labels'] = np.argmax(filter['anti_adversarial_predictions'], axis=-1)
-
-    return filter, len(successful_anti_genuines), len(successful_anti_adversarials)
+    return _filter

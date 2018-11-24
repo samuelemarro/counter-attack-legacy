@@ -1,32 +1,32 @@
-import queue
-import logging
 import configparser
+import logging
+import queue
+
+import foolbox
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
-import foolbox
-import matplotlib.pyplot as plt
 import torchvision
+
 import OffenseDefense
+import OffenseDefense.attacks as attacks
+import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.detectors as detectors
-import OffenseDefense.models as model
-import OffenseDefense.utils as utils
-import OffenseDefense.tests as tests
-import OffenseDefense.model_tools as model_tools
 import OffenseDefense.distance_tools as distance_tools
 import OffenseDefense.loaders as loaders
-import OffenseDefense.batch_attack as batch_attack
-import OffenseDefense.attacks as attacks
+import OffenseDefense.model_tools as model_tools
+import OffenseDefense.models as model
+import OffenseDefense.tests as tests
 import OffenseDefense.training as training
-from OffenseDefense.pytorch_classification.models.cifar.densenet import DenseNet
+import OffenseDefense.utils as utils
+import OffenseDefense.rejectors as rejectors
+from OffenseDefense.pytorch_classification.models.cifar.densenet import \
+    DenseNet
 
 #NOTA: La precisione del floating point si traduce in un errore medio dello 0,01% (con punte dello 0,5%)
 #Questo errore può essere diminuito passando al double, ma è un suicidio computazionale perché raddoppia la
 #memoria richiesta e PyTorch è ottimizzato per float
-
-#NOTA 2: A volte questa differenza di precisione è sufficiente a rendere un'immagine sul boundary
-#talvolta genuina e talvolta avversariale. Ciò non è un problema per l'anti-attack (dopotutto non gli importa
-#la vera label), ma lo è per l'attack.
 
 #NOTE: Using an adversarial loader means that failed samples are automatically removed
 
@@ -42,49 +42,6 @@ def prepare_model():
 
     return model
 
-def image_test(foolbox_model, loader, adversarial_attack, anti_attack):
-    plt.ion()
-    for i, data in enumerate(loader):
-        images, labels = data
-        images = images.numpy()
-        labels = labels.numpy()
-
-        if i == 0:
-            f, subfigures = plt.subplots(images.shape[0], 4, sharex='all', sharey='all', gridspec_kw={'wspace': 0, 'hspace' : 0})
-            #f.set_size_inches(18.5, 10.5, forward=True)
-
-        images, labels, adversarials, anti_genuines, anti_adversarials, _ = get_samples(foolbox_model, images, labels, adversarial_attack, anti_attack)
-
-        #f, subfigures = plt.subplots(images.shape[0], 4, sharex='all', sharey='all', gridspec_kw={'wspace': 0, 'hspace' : 0})
-
-        images = np.moveaxis(images, 1, -1)
-        adversarials = np.moveaxis(adversarials, 1, -1)
-        anti_adversarials = np.moveaxis(anti_adversarials, 1, -1)
-        anti_genuines = np.moveaxis(anti_genuines, 1, -1)
-
-        f.clf()
-
-
-        for j in range(images.shape[0]):
-            image = images[j]
-            adversarial = adversarials[j]
-            anti_adversarial = anti_adversarials[j]
-            anti_genuine = anti_genuines[j]
-
-            subfigures[j, 0].imshow(image)
-            subfigures[j, 0].axis('off')
-
-            subfigures[j, 1].imshow(adversarial)
-            subfigures[j, 1].axis('off')
-
-            subfigures[j, 2].imshow(anti_adversarial)
-            subfigures[j, 2].axis('off')
-
-            subfigures[j, 3].imshow(anti_genuine)
-            subfigures[j, 3].axis('off')
-
-        plt.draw()
-        plt.pause(0.001)
 
 
 def load_pretrained_model(model_name, dataset, path, download=True):
@@ -113,7 +70,7 @@ def load_pretrained_model(model_name, dataset, path, download=True):
                          'models in model_download_links.ini'.format(model_name, dataset))
 
     #TODO: Complete
-
+    
 def batch_main():
     train_loader = model_tools.cifar10_train_loader(1, 10, flip=False, crop=False, normalize=False, shuffle=True)
     test_loader = model_tools.cifar10_test_loader(1, 10, normalize=False, shuffle=True)
@@ -149,26 +106,29 @@ def batch_main():
     batch_worker = batch_attack.PyTorchWorker(model)
     num_workers = 50
 
-    adversarial_distance_tool = distance_tools.AdversarialDistance(type(adversarial_attack).__name__, foolbox_model, adversarial_attack, batch_worker, num_workers)
-    direction_distance_tool = distance_tools.AdversarialDistance(type(direction_attack).__name__, foolbox_model, direction_attack)
-    black_box_distance_tool = distance_tools.AdversarialDistance(type(black_box_attack).__name__, foolbox_model, direction_attack)
+    adversarial_distance_tool = distance_tools.AdversarialDistance(type(adversarial_attack).__name__, foolbox_model, adversarial_attack, p, batch_worker, num_workers)
+    direction_distance_tool = distance_tools.AdversarialDistance(type(direction_attack).__name__, foolbox_model, direction_attack, p)
+    black_box_distance_tool = distance_tools.AdversarialDistance(type(black_box_attack).__name__, foolbox_model, direction_attack, p)
+
 
     test_loader = loaders.TorchLoader(test_loader)
     adversarial_loader = loaders.AdversarialLoader(test_loader, foolbox_model, adversarial_attack, True, batch_worker, num_workers)
     random_noise_loader = loaders.RandomNoiseLoader(foolbox_model, 0, 1, [3, 32, 32], 10, 20)
 
-    #tests.distance_comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool, black_box_distance_tool], p, adversarial_loader, num_workers)
+    tests.distance_comparison_test(foolbox_model, [adversarial_distance_tool, direction_distance_tool, black_box_distance_tool], adversarial_loader, num_workers)
     #tests.attack_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
-    #model_tools.accuracy_test(foolbox_model, test_loader, set([1, 5]))
+    #tests.accuracy_test(foolbox_model, test_loader, [1, 5])
 
     #train_loader = loaders.TorchLoader(train_loader)
     #training.train_torch(model, train_loader, torch.nn.CrossEntropyLoss(), torch.optim.SGD(model.parameters(), lr=0.1), training.MaxEpoch(2), True)
     
-    #detector = detectors.DistanceDetector(foolbox_model, adversarial_distance_tool, p)
+    #detector = detectors.DistanceDetector(adversarial_distance_tool)
     #tests.standard_detector_test(foolbox_model, test_loader, adversarial_attack, detector, batch_worker, num_workers)
 
     #load_pretrained_model('alexnet', 'cifar10', '')
-    tests.parallelization_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
+    #tests.parallelization_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
+    #rejector = rejectors.DistanceRejector(adversarial_distance_tool, 1e-3, True)
+    #tests.evasion_test(foolbox_model, rejector, adversarial_loader, direction_attack, p)
 
 
 cifar_names = [

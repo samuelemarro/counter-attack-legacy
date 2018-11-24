@@ -11,6 +11,7 @@ import OffenseDefense.batch_processing as batch_processing
 import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.loaders as loaders
 import OffenseDefense.distance_tools as distance_tools
+import OffenseDefense.rejectors as rejectors
 
 def accuracy_test(foolbox_model : foolbox.models.Model,
                   loader : loaders.Loader,
@@ -27,8 +28,8 @@ def accuracy_test(foolbox_model : foolbox.models.Model,
             accuracies[i].update(0, len(images) - correct_samples_count)
 
         if verbose:
-            for top_k in sorted(top_ks):
-                print('Top-{} Accuracy: {:2.2f}%'.format(top_k, accuracies[top_k].avg * 100.0))
+            for i in np.argsort(top_ks):
+                print('Top-{} Accuracy: {:2.2f}%'.format(top_ks[i], accuracies[i].avg * 100.0))
 
             print('\n============\n')
 
@@ -37,41 +38,42 @@ def accuracy_test(foolbox_model : foolbox.models.Model,
 
 def distance_comparison_test(foolbox_model : foolbox.models.Model,
                     test_distance_tools,
-                    p : np.float,
                     loader : loaders.Loader,
                     verbose : bool = True):
 
-    final_distances = {}
+    final_estimated_distances = {}
     success_rates = {}
 
     for distance_tool in test_distance_tools:
-        final_distances[distance_tool.name] = []
+        final_estimated_distances[distance_tool.name] = []
         success_rates[distance_tool.name] = utils.AverageMeter()
     
     for images, labels in loader:
         #Remove misclassified samples
         correct_classification_filter = batch_attack.get_correct_samples(foolbox_model, images, labels)
+
         images = correct_classification_filter['images']
         labels = correct_classification_filter['image_labels']
 
         for distance_tool in test_distance_tools:
-            distances = distance_tool.get_distances(images, labels, p)
-            final_distances[distance_tool.name] += list(distances)
+            estimated_distances = distance_tool.get_distances(images)
+            successful_estimated_distances = [distance for distance in estimated_distances if distance is not None]
 
-            success_rates[distance_tool.name].update(1, len(distances))
-            success_rates[distance_tool.name].update(0, len(images) - len(distances))
+            success_rates[distance_tool.name].update(1, len(successful_estimated_distances))
+            success_rates[distance_tool.name].update(0, len(images) - len(successful_estimated_distances))
 
-            tool_distances = final_distances[distance_tool.name]
+            final_estimated_distances[distance_tool.name] += successful_estimated_distances
+
+            tool_estimated_distances = final_estimated_distances[distance_tool.name]
             success_rate = success_rates[distance_tool.name].avg
 
-            average_distance = np.average(tool_distances)
-            median_distance = np.median(tool_distances)
-
-            #Treat failures as samples with distance=Infinity
-            failure_count = success_rates[distance_tool.name].count - success_rates[distance_tool.name].sum
-            adjusted_median_distance = np.median(tool_distances + [np.Infinity] * failure_count)
-            
             if verbose:
+                #Compute the statistics, treating failures as samples with distance=Infinity
+                average_distance = np.average(tool_estimated_distances)
+                median_distance = np.median(tool_estimated_distances)
+                failure_count = success_rates[distance_tool.name].count - success_rates[distance_tool.name].sum
+                adjusted_median_distance = np.median(tool_estimated_distances + [np.Infinity] * failure_count)
+
                 print('{}:'.format(distance_tool.name))
                 print('Average Distance: {:2.2e}'.format(average_distance))
                 print('Median Distance: {:2.2e}'.format(median_distance))
@@ -87,7 +89,7 @@ def distance_comparison_test(foolbox_model : foolbox.models.Model,
     for key, value in success_rates.items():
         success_rates[key] = value.avg
 
-    return final_distances, success_rates
+    return final_estimated_distances, success_rates
 
 def attack_test(foolbox_model : foolbox.models.Model,
                 loader : loaders.Loader,
@@ -101,15 +103,18 @@ def attack_test(foolbox_model : foolbox.models.Model,
     distances = []
 
     for images, labels in loader:
-        adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, batch_worker, num_workers)
+        adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, True, True, batch_worker, num_workers)
         adversarials = adversarial_filter['adversarials']
-        failure_count = len(images) - len(adversarials)
 
         success_rate.update(1, len(adversarials))
-        success_rate.update(0, failure_count)
+        success_rate.update(0, len(images) - len(adversarials))
 
-        distances += list(utils.lp_distance(adversarial_filter['adversarials'], adversarial_filter['images'], p, True))
+        #If there are no successful adversarials, don't update the distances
+        if len(adversarials) > 0:
+            distances += list(utils.lp_distance(adversarial_filter['adversarials'], adversarial_filter['images'], p, True))
 
+        #Compute the statistics, treating failures as samples with distance=Infinity
+        failure_count = success_rate.count - success_rate.sum
         average_distance = np.average(distances)
         median_distance = np.median(distances)
         adjusted_median_distance = np.median(distances + [np.Infinity] * failure_count)
@@ -136,13 +141,12 @@ def standard_detector_test(foolbox_model : foolbox.models.Model,
     adversarial_scores = []
 
     for images, labels in loader:
-        adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, batch_worker, num_workers)
+        adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, True, True, batch_worker, num_workers)
         
         adversarials = adversarial_filter['adversarials']
-        failure_count = len(images) - len(adversarials)
 
         attack_success_rate.update(1, len(adversarials))
-        attack_success_rate.update(0, failure_count)
+        attack_success_rate.update(0, len(images) - len(adversarials))
 
         #Note: We evaluate the detector on all the genuine samples,
         #even the ones that could not be attacked
@@ -179,25 +183,28 @@ def parallelization_test(foolbox_model : foolbox.models.Model,
 
     for images, labels in loader:
         #Run the parallel attack
-        parallel_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, batch_worker, num_workers)
+        parallel_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, True, True, batch_worker, num_workers)
         parallel_adversarials = parallel_adversarial_filter['adversarials']
-        parallel_failure_count = len(images) - len(parallel_adversarials)
 
         parallel_success_rate.update(1, len(parallel_adversarials))
-        parallel_success_rate.update(0, parallel_failure_count)
+        parallel_success_rate.update(0, len(images) - len(parallel_adversarials))
+
         parallel_distances += list(utils.lp_distance(parallel_adversarial_filter['adversarials'], parallel_adversarial_filter['images'], p, True))
 
         #Run the standard attack
-        standard_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack)
+        standard_adversarial_filter = batch_attack.get_adversarials(foolbox_model, images, labels, attack, True, True)
         standard_adversarials = standard_adversarial_filter['adversarials']
-        standard_failure_count = len(images) - len(standard_adversarials)
 
         standard_success_rate.update(1, len(standard_adversarials))
-        standard_success_rate.update(0, standard_failure_count)
+        standard_success_rate.update(0, len(images) - len(standard_adversarials))
 
         standard_distances += list(utils.lp_distance(standard_adversarial_filter['adversarials'], standard_adversarial_filter['images'], p, True))
             
         if verbose:
+            #Compute the statistics, treating failures as samples with distance=Infinity
+            standard_failure_count = standard_success_rate.count - standard_success_rate.sum
+            parallel_failure_count = parallel_success_rate.count - parallel_success_rate.sum
+
             standard_average_distance = np.average(standard_distances)
             standard_median_distance = np.median(standard_distances)
             standard_adjusted_median_distance = np.median(standard_distances + [np.Infinity] * standard_failure_count)
@@ -231,3 +238,55 @@ def parallelization_test(foolbox_model : foolbox.models.Model,
             print('\n============\n')
 
     return standard_success_rate.avg, standard_distances, parallel_success_rate.avg, parallel_distances
+
+def evasion_test(foolbox_model, rejector, loader, attack, p, verbose=True):
+    success_rate = utils.AverageMeter()
+    distances = []
+    
+    for images, labels in loader:
+        _filter = batch_attack.get_correct_samples(foolbox_model, images, labels)
+        images = _filter['images']
+        labels = _filter['image_labels']
+
+        rejector_adversarials = []
+        for image, label in zip(images, labels):
+            rejector_adversarial = rejectors.RejectorAdversarial(foolbox_model,
+                                                                rejector,
+                                                                attack._default_criterion,
+                                                                image,
+                                                                label,
+                                                                attack._default_distance,
+                                                                attack._default_threshold)
+            rejector_adversarials.append(rejector_adversarial)
+
+        adversarials = []
+
+        for rejector_adversarial in rejector_adversarials:
+            adversarials.append(attack(rejector_adversarial))
+
+        #Remove failed samples
+        _filter['adversarials'] = adversarials
+        successful_indices = np.array([i for i in range(len(adversarials))])
+        _filter.filter(successful_indices)
+        images = _filter['images']
+        adversarials = _filter['adversarials']
+
+        failure_count = len(images) - len(adversarials)
+        print('Failures: {}'.format(failure_count))
+
+        success_rate.update(1, len(adversarials))
+        success_rate.update(0, failure_count)
+
+        distances += list(utils.lp_distance(adversarials, images, p, True))
+
+        average_distance = np.average(distances)
+        median_distance = np.median(distances)
+        adjusted_median_distance = np.median(distances + [np.Infinity] * failure_count)
+            
+        if verbose:
+            print('Average Distance: {:2.2e}'.format(average_distance))
+            print('Median Distance: {:2.2e}'.format(median_distance))
+            print('Success Rate: {:2.2f}%'.format(success_rate.avg * 100.0))
+            print('Adjusted Median Distance: {:2.2e}'.format(adjusted_median_distance))
+
+            print('\n============\n')

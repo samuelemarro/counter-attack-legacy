@@ -4,3 +4,4 @@ torchvision>=0.2.0
 pytest>=4.0.0
 scikit_learn>=0.20.0
 matplotlib>=2.0.2
+randomgen>=1.15.1

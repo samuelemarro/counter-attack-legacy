@@ -10,3 +10,4 @@ from .tests import *
 from .training import *
 from .utils import *
 from .visualisation import *
+from .rejectors import *

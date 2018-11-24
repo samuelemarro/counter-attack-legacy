@@ -37,9 +37,9 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         bound_min, bound_max = foolbox_adversarial.bounds()
         image = foolbox_adversarial.original_image
         potential_adversarials = np.clip(vectors * magnitude + image, bound_min, bound_max).astype(np.float32)
-        adversarial_predictions, is_adversarials = self._safe_batch_predictions(foolbox_adversarial, potential_adversarials, n=50)
+        _, batch_is_adversarial = self._safe_batch_predictions(foolbox_adversarial, potential_adversarials, n=50)
 
-        successful_adversarial_indices = np.nonzero(is_adversarials)[0]
+        successful_adversarial_indices = np.nonzero(batch_is_adversarial)[0]
 
         return potential_adversarials[successful_adversarial_indices], vectors[successful_adversarial_indices]
 

@@ -294,4 +294,10 @@ __pycache__/
 /OffenseDefense/data/cifar-10-batches-py/data_batch_1
 
 #SetupTools output
-/OffenseDefense.egg-info
+*.egg-info
+
+#VS Code
+.vscode
+
+#Test coverage reports
+*.coverage

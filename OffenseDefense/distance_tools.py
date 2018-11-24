@@ -1,4 +1,5 @@
 import foolbox
+import numpy as np
 import OffenseDefense.batch_processing as batch_processing
 import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.utils as utils
@@ -6,40 +7,80 @@ import OffenseDefense.utils as utils
 class DistanceTool:
     def __init__(self, name):
         self.name = name
-    def get_distance(self, image, label, p):
+    def get_distance(self, image):
         raise NotImplementedError()
-    def get_distances(self, images, labels, p):
+    def get_distances(self, images):
         raise NotImplementedError()
 
 class AdversarialDistance(DistanceTool):
+    """
+    Finds the distance using an adversarial attack.
+    Returns np.Infinity if it can't find an adversarial
+    sample
+    """
     def __init__(self,
                  name : str,
                  foolbox_model : foolbox.models.Model,
                  attack : foolbox.attacks.Attack,
+                 p : np.float,
                  batch_worker : batch_processing.BatchWorker = None,
                  num_workers : int = 50):
         self.name = name
         self.foolbox_model = foolbox_model
         self.attack = attack
+        self.p = p
         self.batch_worker = batch_worker
         self.num_workers = num_workers
 
-    def get_distance(self, image, label, p):
+    def get_distance(self, image):
+        predictions = self.foolbox_model.predictions(image)
+        label = np.argmax(predictions)
+
         adversarial = self.attack(image, label)
-        distance = utils.lp_distance(adversarial, image, p, False)
+
+        if adversarial is None:
+            return np.Infinity
+
+        distance = utils.lp_distance(adversarial, image, self.p, False)
         return distance
 
-    def get_distances(self, images, labels, p):
+    def get_distances(self, images):
+        batch_predictions = self.foolbox_model.batch_predictions(images)
+        labels = np.argmax(batch_predictions, axis=1)
+
         adversarial_filter = batch_attack.get_adversarials(self.foolbox_model,
                                                            images,
                                                            labels,
                                                            self.attack,
+                                                           False,
+                                                           False,
                                                            self.batch_worker,
                                                            self.num_workers)
+        
+        assert len(adversarial_filter['adversarials']) == len(images)
 
-        #We use adversarial_filter['images'] instead of images because the filter remove the genuine samples
-        #which could not be attacked
-        distances = utils.lp_distance(adversarial_filter['adversarials'], adversarial_filter['images'], p, True)
+        distances = [None] * len(images)
+
+        #Fill in the distances computed by the attack, while leaving the failed attacks at None
+
+        successful_adversarial_indices = [i for i in range(len(images)) if adversarial_filter['adversarials'][i] is not None]
+
+        #If there are no successful adversarial samples, return early
+        if len(successful_adversarial_indices) == 0:
+            return distances
+
+        successful_adversarial_indices = np.array(successful_adversarial_indices)
+
+        successful_adversarials = [adversarial_filter['adversarials'][i] for i in successful_adversarial_indices]
+        successful_images = [adversarial_filter['images'][i] for i in successful_adversarial_indices]
+        successful_adversarials = np.array(successful_adversarials)
+        successful_images = np.array(successful_images)
+
+        successful_distances = utils.lp_distance(successful_adversarials, successful_images, self.p, True)
+
+        for i, original_index in enumerate(successful_adversarial_indices):
+            distances[original_index] = successful_distances[i]
+
         return distances
 
 """

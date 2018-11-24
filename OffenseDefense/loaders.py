@@ -42,16 +42,22 @@ class AdversarialLoader(Loader):
         self.loader_iterator = iter(self.loader)
         return self
 
-    def __next__(self):
+    def next_batch(self):
         try:
             images, labels = next(self.loader_iterator)
 
             adversarial_filter = batch_attack.get_adversarials(self.foolbox_model,
-                                                               images,
-                                                               labels,
-                                                               self.attack,
-                                                               self.batch_worker,
-                                                               self.num_workers)
+                                                            images,
+                                                            labels,
+                                                            self.attack,
+                                                            True,
+                                                            True,
+                                                            self.batch_worker,
+                                                            self.num_workers)
+
+            #If there are no successful adversarials, return empty lists
+            if len(adversarial_filter['adversarials']) == 0:
+                return [], []
 
             adversarials = adversarial_filter['adversarials']
             if self.adversarial_labels:
@@ -62,18 +68,23 @@ class AdversarialLoader(Loader):
 
         except StopIteration:
             raise
+    def __next__(self):
+        adversarials, output_labels = self.next_batch()
+
+        #If there are no successful adversarials, skip to the next
+        #batch until you find a batch with at least one successful sample
+        #or StopIteration is raised
+        while len(adversarials) == 0:
+            adversarials, output_labels = self.next_batch()
+
+        return adversarials, output_labels
 
 class RandomNoiseLoader:
     def __init__(self, foolbox_model, output_min, output_max, output_shape, batch_size, batch_count):
         self.foolbox_model = foolbox_model
         self.output_min = output_min
         self.output_max = output_max
-
-        if isinstance(output_shape, collections.Iterable):
-            self.output_shape = output_shape
-        else:
-            self.output_shape = [output_shape]
-
+        self.output_shape = output_shape
         self.batch_size = batch_size
         self.batch_count = batch_count
         self._batch_counter = 0

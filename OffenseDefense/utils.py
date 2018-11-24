@@ -78,6 +78,12 @@ def lp_distance(x, y, p, batch, broadcast=True):
     if p < 0:
         raise ValueError('p must be positive or zero')
 
+    #If x or y are empty, we retun an empty array
+    empty_x = hasattr(x, '__len__') and len(x) == 0
+    empty_y = hasattr(y, '__len__') and len(y) == 0
+    if batch and (empty_x or empty_y):
+       return np.array([], dtype=np.float)
+
     if broadcast:
         x, y = np.broadcast_arrays(x, y)
 
