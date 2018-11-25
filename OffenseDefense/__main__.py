@@ -31,10 +31,8 @@ from OffenseDefense.models.pytorch.cifar.densenet import DenseNet
 
 
 def prepare_model():
-    model = DenseNet(100, num_classes=10)
-    model = nn.DataParallel(model)
-    model_tools.load_model(model, './pretrained_models/cifar10/densenet-bc-100-12/model_best.pth.tar')
-    model = model.module
+    base_model = DenseNet(100, num_classes=10)
+    model = model_tools.load_model(base_model, './pretrained_models/cifar10/densenet-bc-100-12/model_best.pth.tar', True, True)
     model = nn.Sequential(model_tools.Preprocessing(means=(0.4914, 0.4822, 0.4465),
                                                     stds=(0.2023, 0.1994, 0.2010)), model)
     model.eval()

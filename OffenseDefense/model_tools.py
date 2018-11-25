@@ -75,6 +75,23 @@ def cifar10_test_loader(num_workers, batch_size, normalize, shuffle):
                            shuffle=shuffle,
                            num_workers=num_workers)
 
-def load_model(model, path):
+def load_model(base_model, path, training_model, data_parallel):
+    if data_parallel:
+        model = torch.nn.DataParallel(base_model)
+    else:
+        model = base_model
+
     checkpoint = torch.load(path)
-    model.load_state_dict(checkpoint['state_dict'])
+    
+    if training_model:
+        model.load_state_dict(checkpoint['state_dict'])
+    else:
+        model.load_state_dict(checkpoint)
+
+    if data_parallel:
+        model = model.module
+
+    return model
+
+def save_model(model, path):
+    torch.save(model.state_dict(), path)
