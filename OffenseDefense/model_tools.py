@@ -6,6 +6,7 @@ import numpy as np
 
 from . import utils
 
+
 class Preprocessing(torch.nn.Module):
     def __init__(self, means, stds):
         super(Preprocessing, self).__init__()
@@ -16,6 +17,7 @@ class Preprocessing(torch.nn.Module):
         means = self.means.to(input)
         stds = self.stds.to(input)
         return (input - means) / stds
+
 
 class AdversarialDataset(data.Dataset):
     def __init__(self, path, transform=None, count_limit=None):
@@ -34,13 +36,14 @@ class AdversarialDataset(data.Dataset):
         is_adversarial = torch.FloatTensor([is_adversarial])
         if self.transform is not None:
             image = self.transform(image)
-        
+
         return image, label, is_adversarial
 
     def __len__(self):
         if self.count_limit is None:
             return len(self.dataset)
         return self.count_limit
+
 
 def cifar10_train_loader(num_workers, batch_size, flip, crop, normalize, shuffle):
     transformations = [transforms.ToTensor()]
@@ -49,7 +52,8 @@ def cifar10_train_loader(num_workers, batch_size, flip, crop, normalize, shuffle
     if crop:
         transformations.append(transforms.RandomCrop(32, padding=4))
     if normalize:
-        transformations.append(transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)))
+        transformations.append(transforms.Normalize(
+            (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)))
 
     dataset = datasets.CIFAR10(root='./data',
                                train=True,
@@ -60,11 +64,13 @@ def cifar10_train_loader(num_workers, batch_size, flip, crop, normalize, shuffle
                            shuffle=shuffle,
                            num_workers=num_workers)
 
+
 def cifar10_test_loader(num_workers, batch_size, normalize, shuffle):
     transformations = [transforms.ToTensor()]
 
     if normalize:
-        transformations.append(transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)))
+        transformations.append(transforms.Normalize(
+            (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)))
 
     dataset = datasets.CIFAR10(root='./data',
                                train=False,
@@ -75,6 +81,7 @@ def cifar10_test_loader(num_workers, batch_size, normalize, shuffle):
                            shuffle=shuffle,
                            num_workers=num_workers)
 
+
 def load_model(base_model, path, training_model, data_parallel):
     if data_parallel:
         model = torch.nn.DataParallel(base_model)
@@ -82,7 +89,7 @@ def load_model(base_model, path, training_model, data_parallel):
         model = base_model
 
     checkpoint = torch.load(path)
-    
+
     if training_model:
         model.load_state_dict(checkpoint['state_dict'])
     else:
@@ -92,6 +99,7 @@ def load_model(base_model, path, training_model, data_parallel):
         model = model.module
 
     return model
+
 
 def save_model(model, path):
     torch.save(model.state_dict(), path)

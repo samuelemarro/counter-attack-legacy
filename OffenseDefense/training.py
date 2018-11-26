@@ -1,16 +1,20 @@
 import torch
 from . import utils
 
+
 class StopCriterion:
-    #Note: epoch is 1-indexed because 0 is the pre-epoch
+    # Note: epoch is 1-indexed because 0 is the pre-epoch
     def proceed(self, epoch, loss, accuracy):
         pass
+
 
 class MaxEpoch(StopCriterion):
     def __init__(self, max_epoch):
         self.max_epoch = max_epoch
+
     def proceed(self, epoch, loss, accuracy):
         return epoch <= self.max_epoch
+
 
 def train_torch(model, loader, criterion, optimizer, stop_criterion, use_cuda, verbose=True):
     model.train()
@@ -25,7 +29,7 @@ def train_torch(model, loader, criterion, optimizer, stop_criterion, use_cuda, v
 
         for images, labels in loader:
             torch_images = torch.from_numpy(images)
-            #Torch uses long ints for the labels
+            # Torch uses long ints for the labels
             torch_labels = torch.from_numpy(labels).long()
 
             torch_images.requires_grad_()
@@ -34,11 +38,11 @@ def train_torch(model, loader, criterion, optimizer, stop_criterion, use_cuda, v
                 torch_images = torch_images.cuda()
                 torch_labels = torch_labels.cuda(async=True)
 
-            #Compute the outputs
+            # Compute the outputs
             outputs = model(torch_images)
             loss = criterion(outputs, torch_labels)
 
-            #Compute the statistics
+            # Compute the statistics
             outputs = outputs.detach().cpu().numpy()
             loss = loss.detach().cpu().numpy()
 
@@ -52,17 +56,16 @@ def train_torch(model, loader, criterion, optimizer, stop_criterion, use_cuda, v
             top5_accuracy.update(1, top5_count)
             top5_accuracy.update(0, len(images) - top5_count)
 
-            #Update the parameters.
-            #Since the stop_criterion might decide that we do not
-            #need any training at all, in the first epoch we do not
-            #perform any updates and only compute the statistics
+            # Update the parameters.
+            # Since the stop_criterion might decide that we do not
+            # need any training at all, in the first epoch we do not
+            # perform any updates and only compute the statistics
             if epoch != 0:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
 
             epoch += 1
-
 
         if verbose:
             print('\n=========')
@@ -75,5 +78,5 @@ def train_torch(model, loader, criterion, optimizer, stop_criterion, use_cuda, v
             print('Top-1 Accuracy: {:2.2f}%'.format(top1_accuracy.avg * 100.0))
             print('Top-5 Accuracy: {:2.2f}%'.format(top5_accuracy.avg * 100.0))
 
-        
-        proceed = stop_criterion.proceed(epoch, average_loss.avg, top1_accuracy.avg)
+        proceed = stop_criterion.proceed(
+            epoch, average_loss.avg, top1_accuracy.avg)

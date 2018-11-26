@@ -11,6 +11,8 @@ especially useful when you have some methods that are highly parallelizable
 (batch workers), but need to be used by several non-parallel methods
 (thread workers).
 """
+
+
 class BatchPooler:
     def __init__(self, batch_worker):
         self.inputs = []
@@ -22,13 +24,13 @@ class BatchPooler:
 
     def register(self):
         assert not self.running
-        #Only register before execution
+        # Only register before execution
         self.registered_ids.append(threading.get_ident())
         self.inputs.append(queue.Queue())
         self.outputs.append(queue.Queue())
 
     def deregister(self):
-        #Schedule for cleanup
+        # Schedule for cleanup
         self.deregistered_ids.put(threading.get_ident())
 
     def call(self, input):
@@ -67,7 +69,7 @@ class BatchPooler:
                     index = self.registered_ids.index(active_id)
                     self.outputs[index].put(output)
 
-            #Cleanup
+            # Cleanup
             deregistered_id = self._get_deregistered_id()
             while deregistered_id is not None:
 
@@ -78,15 +80,19 @@ class BatchPooler:
 
                 deregistered_id = self._get_deregistered_id()
 
+
 class BatchWorker:
     def __init__(self):
         pass
+
     def __call__(self, inputs):
         pass
+
 
 class ThreadWorker:
     def __init__(self):
         pass
+
     def __call__(self, pooler, return_queue):
         pass
 
@@ -100,12 +106,14 @@ def _parallel_thread_function(pooler, thread_worker, output_queue):
 """
 Manages threading and queuing for batch and thread workers.
 """
+
+
 def run_queue_threads(batch_worker, thread_workers, input_queue, data):
     pooler = BatchPooler(batch_worker)
     threads = []
 
     output_queue = queue.Queue()
-    
+
     for i, data_entry in enumerate(data):
         input_queue.put((i, data_entry))
 
@@ -128,7 +136,7 @@ def run_queue_threads(batch_worker, thread_workers, input_queue, data):
         except queue.Empty:
             break
 
-    #Sort the outputs
+    # Sort the outputs
     outputs = sorted(outputs, key=lambda output: output[0])
 
     return [output[1] for output in outputs]

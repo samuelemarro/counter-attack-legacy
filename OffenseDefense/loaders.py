@@ -2,11 +2,14 @@ import collections
 import numpy as np
 from . import batch_attack
 
+
 class Loader:
     def __iter__(self):
         return self
+
     def __next__(self):
         raise NotImplementedError()
+
 
 class TorchLoader(Loader):
     def __init__(self, torch_loader):
@@ -28,6 +31,7 @@ class TorchLoader(Loader):
         except StopIteration:
             raise
 
+
 class AdversarialLoader(Loader):
     def __init__(self, loader, foolbox_model, attack, adversarial_labels, batch_worker=None, num_workers=50):
         self.loader = loader
@@ -47,15 +51,15 @@ class AdversarialLoader(Loader):
             images, labels = next(self.loader_iterator)
 
             adversarial_filter = batch_attack.get_adversarials(self.foolbox_model,
-                                                            images,
-                                                            labels,
-                                                            self.attack,
-                                                            True,
-                                                            True,
-                                                            self.batch_worker,
-                                                            self.num_workers)
+                                                               images,
+                                                               labels,
+                                                               self.attack,
+                                                               True,
+                                                               True,
+                                                               self.batch_worker,
+                                                               self.num_workers)
 
-            #If there are no successful adversarials, return empty lists
+            # If there are no successful adversarials, return empty lists
             if len(adversarial_filter['adversarials']) == 0:
                 return [], []
 
@@ -68,16 +72,18 @@ class AdversarialLoader(Loader):
 
         except StopIteration:
             raise
+
     def __next__(self):
         adversarials, output_labels = self.next_batch()
 
-        #If there are no successful adversarials, skip to the next
-        #batch until you find a batch with at least one successful sample
-        #or StopIteration is raised
+        # If there are no successful adversarials, skip to the next
+        # batch until you find a batch with at least one successful sample
+        # or StopIteration is raised
         while len(adversarials) == 0:
             adversarials, output_labels = self.next_batch()
 
         return adversarials, output_labels
+
 
 class RandomNoiseLoader:
     def __init__(self, foolbox_model, output_min, output_max, output_shape, batch_size, batch_count):
@@ -96,9 +102,11 @@ class RandomNoiseLoader:
     def __next__(self):
         if self._batch_counter == self.batch_count:
             raise StopIteration()
-        
-        samples = np.random.uniform(self.output_min, self.output_max, [self.batch_size] + self.output_shape).astype(np.float32)
-        labels = np.argmax(self.foolbox_model.batch_predictions(samples), axis=1).astype(int)
+
+        samples = np.random.uniform(self.output_min, self.output_max, [
+                                    self.batch_size] + self.output_shape).astype(np.float32)
+        labels = np.argmax(self.foolbox_model.batch_predictions(
+            samples), axis=1).astype(int)
 
         self._batch_counter += 1
 

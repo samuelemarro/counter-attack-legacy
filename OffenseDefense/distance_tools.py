@@ -2,13 +2,17 @@ import foolbox
 import numpy as np
 from . import batch_attack, batch_processing, utils
 
+
 class DistanceTool:
     def __init__(self, name):
         self.name = name
+
     def get_distance(self, image):
         raise NotImplementedError()
+
     def get_distances(self, images):
         raise NotImplementedError()
+
 
 class AdversarialDistance(DistanceTool):
     """
@@ -16,13 +20,14 @@ class AdversarialDistance(DistanceTool):
     Returns np.Infinity if it can't find an adversarial
     sample
     """
+
     def __init__(self,
-                 name : str,
-                 foolbox_model : foolbox.models.Model,
-                 attack : foolbox.attacks.Attack,
-                 p : np.float,
-                 batch_worker : batch_processing.BatchWorker = None,
-                 num_workers : int = 50):
+                 name: str,
+                 foolbox_model: foolbox.models.Model,
+                 attack: foolbox.attacks.Attack,
+                 p: np.float,
+                 batch_worker: batch_processing.BatchWorker = None,
+                 num_workers: int = 50):
         self.name = name
         self.foolbox_model = foolbox_model
         self.attack = attack
@@ -54,32 +59,38 @@ class AdversarialDistance(DistanceTool):
                                                            False,
                                                            self.batch_worker,
                                                            self.num_workers)
-        
+
         assert len(adversarial_filter['adversarials']) == len(images)
 
         distances = [None] * len(images)
 
-        #Fill in the distances computed by the attack, while leaving the failed attacks at None
+        # Fill in the distances computed by the attack, while leaving the failed attacks at None
 
-        successful_adversarial_indices = [i for i in range(len(images)) if adversarial_filter['adversarials'][i] is not None]
+        successful_adversarial_indices = [i for i in range(
+            len(images)) if adversarial_filter['adversarials'][i] is not None]
 
-        #If there are no successful adversarial samples, return early
+        # If there are no successful adversarial samples, return early
         if len(successful_adversarial_indices) == 0:
             return distances
 
-        successful_adversarial_indices = np.array(successful_adversarial_indices)
+        successful_adversarial_indices = np.array(
+            successful_adversarial_indices)
 
-        successful_adversarials = [adversarial_filter['adversarials'][i] for i in successful_adversarial_indices]
-        successful_images = [adversarial_filter['images'][i] for i in successful_adversarial_indices]
+        successful_adversarials = [
+            adversarial_filter['adversarials'][i] for i in successful_adversarial_indices]
+        successful_images = [adversarial_filter['images'][i]
+                             for i in successful_adversarial_indices]
         successful_adversarials = np.array(successful_adversarials)
         successful_images = np.array(successful_images)
 
-        successful_distances = utils.lp_distance(successful_adversarials, successful_images, self.p, True)
+        successful_distances = utils.lp_distance(
+            successful_adversarials, successful_images, self.p, True)
 
         for i, original_index in enumerate(successful_adversarial_indices):
             distances[original_index] = successful_distances[i]
 
         return distances
+
 
 """
 Returns the unnormalized L_p distance.
@@ -96,30 +107,36 @@ However, since it's an instance, calls to the class are handled by
 __call__. In __call__, we init WrappedLpDistance with the provided
 arguments (in addition to p) and return it.
 """
+
+
 class LpDistance(foolbox.distances.Distance):
     class WrappedLpDistance(foolbox.distances.Distance):
-        def __init__(self, p, reference = None, other = None, bounds = None, value = None):
+        def __init__(self, p, reference=None, other=None, bounds=None, value=None):
             self.p = p
             super().__init__(reference, other, bounds, value)
 
         def _calculate(self):
-            value = utils.lp_distance(self.other, self.reference, self.p, False)
+            value = utils.lp_distance(
+                self.other, self.reference, self.p, False)
             gradient = None
             return value, gradient
 
         @property
         def gradient(self):
             raise NotImplementedError
+
         def name(self):
             return 'L{} Distance'.format(self.p)
 
     def __init__(self, p):
         self.p = p
+
     def __call__(self,
                  reference=None,
                  other=None,
                  bounds=None,
                  value=None):
         return LpDistance.WrappedLpDistance(self.p, reference, other, bounds, value)
+
     def _calculate(self):
         raise NotImplementedError()

@@ -1,4 +1,3 @@
-* Implement a comparison with the distribution of distances
 * Introduce more assertions and unit tests
 * PersistentAttack (tries the same attack with different epsilons until it succeeds)
 * Find a policy for failures in adversarial attacks
@@ -12,4 +11,4 @@
 * Complete setup.py
 * Test when there are no successful adversarial samples
 * Rename variables to encompass more than images?
-* Complete load_pretrained_model
+* evasion_test raises a ValueError due to a shape mismatch in lp_distance

@@ -1,11 +1,14 @@
 import foolbox
 import numpy as np
 
+
 class Rejector:
     def valid(self, image, predictions):
         raise NotImplementedError()
+
     def batch_valid(self, images, batch_predictions):
         raise NotImplementedError()
+
 
 class DistanceRejector(Rejector):
     def __init__(self, distance_tool, threshold, valid_if_failed):
@@ -34,26 +37,30 @@ class DistanceRejector(Rejector):
 
         return responses
 
+
 class DummyRejector(Rejector):
     def valid(self, image, predictions):
         return True
+
     def batch_valid(self, images, batch_predictions):
         return np.ones([len(images)], dtype=np.bool)
+
 
 class RejectorAdversarial(foolbox.Adversarial):
     """
     A custom adversarial that treats an evasion target as standard target.
     It only has two labels, 0 (rejected or correctly classified) and 1 (unrejected and misclassified).
     """
+
     def __init__(self,
-                model,
-                rejector,
-                criterion,
-                original_image,
-                original_class,
-                distance=foolbox.distances.MSE,
-                threshold=None,
-                verbose=False):
+                 model,
+                 rejector,
+                 criterion,
+                 original_image,
+                 original_class,
+                 distance=foolbox.distances.MSE,
+                 threshold=None,
+                 verbose=False):
         self.rejector = rejector
         self.original_image_class = original_class
         super().__init__(model, criterion, original_image, 0, distance, threshold, verbose)
@@ -61,7 +68,7 @@ class RejectorAdversarial(foolbox.Adversarial):
     def target_class(self):
         try:
             self._criterion.target_class()
-            #If it has a target class, we set it to 1
+            # If it has a target class, we set it to 1
             target_class = None
         except AttributeError:
             target_class = None
@@ -72,7 +79,13 @@ class RejectorAdversarial(foolbox.Adversarial):
 
     def compound_predictions(self, image):
         predictions = self._model.predictions(image)
-        is_adversarial = self._criterion.is_adversarial(predictions, self.original_image_class)
+        is_adversarial = self._criterion.is_adversarial(
+            predictions, self.original_image_class)
+
+        # If the sample isn't adversarial, don't bother running the rejector
+        if not is_adversarial:
+            return np.array([1., 0.])
+
         is_valid = self.rejector.valid(image, predictions)
         if is_adversarial and is_valid:
             output = np.array([0., 1.])
@@ -81,17 +94,23 @@ class RejectorAdversarial(foolbox.Adversarial):
         return output
 
     def compound_batch_predictions(self, images):
+        # The default output is [0., 1.]
+        outputs = np.tile([1., 0.], [len(images), 1])
+
         batch_predictions = self._model.batch_predictions(images)
-        batch_is_adversarial = [self._criterion.is_adversarial(predictions, self.original_image_class) for predictions in batch_predictions]
-        batch_is_valid = self.rejector.batch_valid(images, batch_predictions)
+        batch_is_adversarial = [self._criterion.is_adversarial(
+            predictions, self.original_image_class) for predictions in batch_predictions]
+        adversarial_indices = [i for i in range(
+            len(batch_is_adversarial)) if batch_is_adversarial[i]]
 
-        batch_successful = np.logical_and(batch_is_adversarial, batch_is_valid)
-        successful_indices = np.nonzero(batch_successful)[0]
-        unsuccessful_indices = np.nonzero(np.logical_not(batch_successful))[0]
+        batch_is_valid = self.rejector.batch_valid(
+            images, batch_predictions[adversarial_indices])
 
-        outputs = np.zeros([len(images), 2])
-        outputs[successful_indices] = np.array([0., 1.])
-        outputs[unsuccessful_indices] = np.array([1., 0.])
+        for i, original_index in enumerate(adversarial_indices):
+            if batch_is_valid[i]:
+                outputs[original_index] = np.array([0., 1.])
+        if len(np.nonzero(batch_is_valid)[0]) > 0:
+            print('Found one valid sample')
 
         return outputs
 
@@ -187,5 +206,3 @@ class RejectorAdversarial(foolbox.Adversarial):
 
     def backward(self, gradient, image=None, strict=True):
         raise NotImplementedError()
-
-    
