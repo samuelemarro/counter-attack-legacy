@@ -62,7 +62,8 @@ class BatchPooler:
                     inputs.append(input)
                     active_ids.append(self.registered_ids[i])
 
-            #print('Registered: {} Active: {}'.format(len(self.registered_ids), len(active_ids)))
+            # print('Registered: {} Active: {}'.format(
+            #    len(self.registered_ids), len(active_ids)))
             if active_ids:
                 outputs = self.batch_worker(inputs)
                 for active_id, output in zip(active_ids, outputs):

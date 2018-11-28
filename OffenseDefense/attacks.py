@@ -4,6 +4,35 @@ import foolbox
 from . import distance_tools, utils
 
 
+class AttackWithParameters(foolbox.attacks.Attack):
+    """Many foolbox attacks can accept keyword arguments when called. This
+    attack allows us to set the arguments that will be passed before calling.
+    """
+
+    def __init__(self, attack: foolbox.attacks.Attack, **call_kwargs):
+        """Initializes the AttackWithParameters.
+
+        Parameters
+        ----------
+        attack : foolbox.attacks.Attack
+            The attack that will be called.
+        **call_kwargs : 
+            The keyword arguments that will be passed to the attack.
+        """
+
+        super().__init__(attack._default_model, attack._default_criterion,
+                         attack._default_distance, attack._default_threshold)
+        self.attack = attack
+        self.call_kwargs = call_kwargs
+
+    @foolbox.attacks.base.call_decorator
+    def __call__(self, input_or_adv, label=None, unpack=True, **kwargs):
+        self.attack(input_or_adv, label, unpack, **self.call_kwargs)
+
+    def name(self):
+        return self.attack.name() + ' (with parameters)'
+
+
 class RandomDirectionAttack(foolbox.attacks.Attack):
     """A gradient-free attack that tries to push the sample along several directions
     and finetunes the magnitude of the first perturbation that crosses the decision

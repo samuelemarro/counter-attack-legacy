@@ -42,7 +42,7 @@ class AdversarialDistance(DistanceTool):
         adversarial = self.attack(image, label)
 
         if adversarial is None:
-            return np.Infinity
+            return None
 
         distance = utils.lp_distance(adversarial, image, self.p, False)
         return distance
