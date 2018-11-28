@@ -22,6 +22,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
                  search_steps: int,
                  search_epsilon: float,
                  finetuning_precision: float,
+                 max_batch_size: int = 50,
                  random_state: np.random.RandomState = None):
         """Initializes the attack.
 
@@ -39,7 +40,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
             The number of directions that will be explored. More directions means
             better results but slower execution.
         search_steps : int
-            The number of steps that will be computed along a certain direction. More 
+            The number of steps that will be computed along a certain direction. More
             search steps means better results but slower execution.
         search_epsilon : float
             The size of each step along a certain direction. Remember that the attack will
@@ -49,6 +50,9 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         finetuning_precision : float
             The precision to which the magnitude will be finetuned. Since the attack finetunes
             using binary search, a small value doesn't have a big effect on execution time.
+        max_batch_size : int, optional
+            The maximum size of the batch that will be fed to the model. A bigger batch size
+            means faster search but more memory usage.
         random_state : numpy.random.RandomState, optional
             The RandomState that will be used to generate the random directions. If None, the
             attack will use NumPy's default random module.
@@ -60,6 +64,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         self.search_steps = search_steps
         self.search_epsilon = search_epsilon
         self.finetuning_precision = finetuning_precision
+        self.max_batch_size = max_batch_size
         self.random_state = random_state
 
     # Uses Marsaglia's method for picking a random point on a unit sphere
@@ -74,11 +79,18 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         return directions.astype(np.float32)
 
     # Avoids Out of Memory errors by splitting the batch in minibatches
-    def _safe_batch_predictions(self, foolbox_adversarial, images, n=1):
+    def _safe_batch_predictions(self, foolbox_adversarial, images):
         batch_predictions = []
         batch_is_adversarial = []
-        split_images = [np.array(images[i * n:(i + 1) * n])
-                        for i in range((len(images) + n - 1) // n)]
+        n = self.max_batch_size
+        split_images = []
+        minibatch_count = (
+            len(images) + self.max_batch_size - 1) // self.max_batch_size
+
+        for i in range(minibatch_count):
+            split_images.append(
+                np.array(images[i * self.max_batch_size:(i + 1) * self.max_batch_size]))
+
         for subsection in split_images:
             subsection_predictions, subsection_is_adversarial = foolbox_adversarial.batch_predictions(
                 subsection.astype(np.float32))
@@ -94,7 +106,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         potential_adversarials = np.clip(
             vectors * magnitude + image, bound_min, bound_max).astype(np.float32)
         _, batch_is_adversarial = self._safe_batch_predictions(
-            foolbox_adversarial, potential_adversarials, n=50)
+            foolbox_adversarial, potential_adversarials)
 
         successful_adversarial_indices = np.nonzero(batch_is_adversarial)[0]
 

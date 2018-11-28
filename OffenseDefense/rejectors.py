@@ -10,14 +10,18 @@ class Rejector:
         raise NotImplementedError()
 
 
-class DistanceRejector(Rejector):
-    def __init__(self, distance_tool, threshold, valid_if_failed):
-        self.distance_tool = distance_tool
+class DetectorRejector(Rejector):
+    """Accepts a sample only if the score assigned by the
+    detector is above a certain threshold.
+    """
+
+    def __init__(self, detector, threshold, valid_if_failed):
+        self.detector = detector
         self.threshold = threshold
         self.valid_if_failed = valid_if_failed
 
     def valid(self, image, predictions):
-        distance = self.distance_tool.get_distance(image)
+        distance = self.detector.get_score(image)
 
         if distance is None:
             return self.valid_if_failed
@@ -25,7 +29,7 @@ class DistanceRejector(Rejector):
         return distance >= self.threshold
 
     def batch_valid(self, images, batch_predictions):
-        distances = self.distance_tool.get_distances(images)
+        distances = self.detector.get_scores(images)
 
         responses = []
 

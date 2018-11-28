@@ -4,10 +4,14 @@ from . import distance_tools
 
 
 class Detector:
-    def get_score(self, image):
+    """Base class for detectors. Each detector
+    outputs a "trustworthiness score" for each input.
+    """
+
+    def get_score(self, image) -> float:
         raise NotImplementedError()
 
-    def get_scores(self, images):
+    def get_scores(self, images) -> np.ndarray:
         raise NotImplementedError()
 
 

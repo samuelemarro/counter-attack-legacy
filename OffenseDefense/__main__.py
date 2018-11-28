@@ -121,20 +121,21 @@ def batch_main():
         foolbox_model, 0, 1, [3, 32, 32], 10, 20)
 
     tests.distance_comparison_test(foolbox_model, [
-                                   adversarial_distance_tool, direction_distance_tool, black_box_distance_tool], adversarial_loader)
+        adversarial_distance_tool, direction_distance_tool, black_box_distance_tool], adversarial_loader)
     #tests.attack_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
     #tests.accuracy_test(foolbox_model, test_loader, [1, 5])
 
     #train_loader = loaders.TorchLoader(train_loader)
     #training.train_torch(model, train_loader, torch.nn.CrossEntropyLoss(), torch.optim.SGD(model.parameters(), lr=0.1), training.MaxEpoch(2), True)
 
-    #detector = detectors.DistanceDetector(adversarial_distance_tool)
+    detector = detectors.DistanceDetector(adversarial_distance_tool)
     #tests.standard_detector_test(foolbox_model, test_loader, adversarial_attack, detector, batch_worker, num_workers)
 
     #load_pretrained_model('alexnet', 'cifar10', '')
     #tests.parallelization_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
-    #rejector = rejectors.DistanceRejector( adversarial_distance_tool, 1e-3, True)
-    #tests.evasion_test(foolbox_model, rejector, adversarial_loader, direction_attack, p)
+    rejector = rejectors.DetectorRejector(detector, 1e-3, True)
+    tests.evasion_test(foolbox_model, rejector,
+                       adversarial_loader, direction_attack, p)
 
 
 cifar_names = [
