@@ -1,19 +1,19 @@
 import queue
 import threading
 
-"""
-Manages workers by acting as a middleman between thread workers
-(which provide inputs) and the batch worker (which provides outputs).
-When running, it collects several inputs from the thread workers and
-uses the batch worker to compute the outputs. Once the outputs are ready,
-it returns all the outputs to the corresponding thread workers. This is
-especially useful when you have some methods that are highly parallelizable
-(batch workers), but need to be used by several non-parallel methods
-(thread workers).
-"""
-
 
 class BatchPooler:
+    """
+    Manages workers by acting as a middleman between thread workers
+    (which provide inputs) and the batch worker (which provides outputs).
+    When running, it collects several inputs from the thread workers and
+    uses the batch worker to compute the outputs. Once the outputs are ready,
+    it returns all the outputs to the corresponding thread workers. This is
+    especially useful when you have some methods that are highly parallelizable
+    (batch workers), but need to be used by several non-parallel methods
+    (thread workers).
+    """
+
     def __init__(self, batch_worker):
         self.inputs = []
         self.outputs = []
@@ -23,8 +23,8 @@ class BatchPooler:
         self.running = False
 
     def register(self):
-        assert not self.running
         # Only register before execution
+        assert not self.running
         self.registered_ids.append(threading.get_ident())
         self.inputs.append(queue.Queue())
         self.outputs.append(queue.Queue())
