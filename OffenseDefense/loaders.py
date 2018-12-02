@@ -56,8 +56,8 @@ class AdversarialLoader(Loader):
                                                                self.attack,
                                                                True,
                                                                True,
-                                                               self.batch_worker,
-                                                               self.num_workers)
+                                                               batch_worker=self.batch_worker,
+                                                               num_workers=self.num_workers)
 
             # If there are no successful adversarials, return empty lists
             if len(adversarial_filter['adversarials']) == 0:

@@ -98,11 +98,11 @@ def batch_main():
     num_workers = 50
 
     adversarial_distance_tool = distance_tools.AdversarialDistance(
-        adversarial_attack.name(), foolbox_model, adversarial_attack, p, batch_worker, num_workers)
+        adversarial_attack.name(), foolbox_model, adversarial_attack, p, np.Infinity, batch_worker, num_workers)
     direction_distance_tool = distance_tools.AdversarialDistance(
-        direction_attack.name(), foolbox_model, direction_attack, p)
+        direction_attack.name(), foolbox_model, direction_attack, p, np.Infinity)
     black_box_distance_tool = distance_tools.AdversarialDistance(
-        black_box_attack.name(), foolbox_model, direction_attack, p)
+        black_box_attack.name(), foolbox_model, direction_attack, p, np.Infinity)
 
     test_loader = loaders.TorchLoader(test_loader)
     adversarial_loader = loaders.AdversarialLoader(
@@ -110,6 +110,7 @@ def batch_main():
     random_noise_loader = loaders.RandomNoiseLoader(
         foolbox_model, 0, 1, [3, 32, 32], 10, 20)
 
+    # Note: When running the distance_comparison_test, remember to use None as failure_value
     # tests.distance_comparison_test(foolbox_model, [
     #    adversarial_distance_tool, direction_distance_tool, black_box_distance_tool], adversarial_loader)
     # tests.attack_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
@@ -123,9 +124,19 @@ def batch_main():
 
     # load_pretrained_model('alexnet', 'cifar10', '')
     # tests.parallelization_test(foolbox_model, test_loader, adversarial_attack, p, batch_worker, num_workers)
-    rejector = rejectors.DetectorRejector(detector, 1e-3, True)
-    tests.evasion_test(foolbox_model, rejector,
-                       adversarial_loader, direction_attack, p)
+
+    # Remember: attack_test removes misclassified samples. In this context, it means that it
+    # will remove genuine samples that are rejected
+    detector_model = detectors.CompositeDetectorModel(
+        foolbox_model, detector, 1e-5)
+    detector_aware_attack = foolbox.attacks.BoundaryAttack(detector_model,
+                                                           foolbox.criteria.CombinedCriteria(
+                                                               foolbox.criteria.Misclassification(), detectors.Undetected()),
+                                                           distance=distance_tools.LpDistance(p))
+    detector_aware_attack = attacks.AttackWithParameters(
+        detector_aware_attack, verbose=True)
+    tests.attack_test(detector_model,
+                      adversarial_loader, detector_aware_attack, p)
 
 
 cifar_names = [

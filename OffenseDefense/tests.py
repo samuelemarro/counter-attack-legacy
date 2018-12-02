@@ -110,7 +110,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
 
     for images, labels in loader:
         adversarial_filter = batch_attack.get_adversarials(
-            foolbox_model, images, labels, attack, True, True, batch_worker, num_workers)
+            foolbox_model, images, labels, attack, True, True, batch_worker=batch_worker, num_workers=num_workers)
         adversarials = adversarial_filter['adversarials']
 
         success_rate.update(1, len(adversarials))
@@ -153,7 +153,7 @@ def standard_detector_test(foolbox_model: foolbox.models.Model,
 
     for images, labels in loader:
         adversarial_filter = batch_attack.get_adversarials(
-            foolbox_model, images, labels, attack, True, True, batch_worker, num_workers)
+            foolbox_model, images, labels, attack, True, True, batch_worker=batch_worker, num_workers=num_workers)
 
         adversarials = adversarial_filter['adversarials']
 
@@ -200,7 +200,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
     for images, labels in loader:
         # Run the parallel attack
         parallel_adversarial_filter = batch_attack.get_adversarials(
-            foolbox_model, images, labels, attack, True, True, batch_worker, num_workers)
+            foolbox_model, images, labels, attack, True, True, batch_worker=batch_worker, num_workers=num_workers)
         parallel_adversarials = parallel_adversarial_filter['adversarials']
 
         parallel_success_rate.update(1, len(parallel_adversarials))
@@ -277,82 +277,3 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
             print('\n============\n')
 
     return standard_success_rate.avg, standard_distances, parallel_success_rate.avg, parallel_distances
-
-
-def evasion_test(foolbox_model, rejector, loader, attack, p, verbose=True):
-    success_rate = utils.AverageMeter()
-    distances = []
-
-    for images, labels in loader:
-        _filter = batch_attack.get_correct_samples(
-            foolbox_model, images, labels)
-        images = _filter['images']
-        labels = _filter['image_labels']
-
-        rejector_adversarials = []
-        for image, label in zip(images, labels):
-            rejector_adversarial = rejectors.RejectorAdversarial(foolbox_model,
-                                                                 rejector,
-                                                                 attack._default_criterion,
-                                                                 image,
-                                                                 label,
-                                                                 attack._default_distance,
-                                                                 attack._default_threshold)
-            rejector_adversarials.append(rejector_adversarial)
-
-        adversarials = []
-
-        for rejector_adversarial in rejector_adversarials:
-            adversarials.append(attack(rejector_adversarial))
-            print('Done!')
-
-        # Remove failed samples
-        _filter['adversarials'] = adversarials
-        successful_indices = np.array([i for i in range(len(adversarials))])
-        _filter.filter(successful_indices)
-        images = _filter['images']
-        adversarials = _filter['adversarials']
-
-        failure_count = len(images) - len(adversarials)
-        print('Failures: {}'.format(failure_count))
-
-        success_rate.update(1, len(adversarials))
-        success_rate.update(0, failure_count)
-
-        distances += list(utils.lp_distance(adversarials, images, p, True))
-
-        average_distance = np.average(distances)
-        median_distance = np.median(distances)
-        adjusted_median_distance = np.median(
-            distances + [np.Infinity] * failure_count)
-
-        if verbose:
-            print('Average Distance: {:2.2e}'.format(average_distance))
-            print('Median Distance: {:2.2e}'.format(median_distance))
-            print('Success Rate: {:2.2f}%'.format(success_rate.avg * 100.0))
-            print('Adjusted Median Distance: {:2.2e}'.format(
-                adjusted_median_distance))
-
-            print('\n============\n')
-
-
-def evasion_detector_test(foolbox_model,
-                          rejector,
-                          approximate_model,
-                          loader,
-                          attack,
-                          p,
-                          batch_worker: batch_processing.BatchWorker,
-                          num_workers: int = 50,
-                          verbose: bool = True):
-    for images, labels in loader:
-        # Remove misclassified
-        classification_filter = batch_attack.get_correct_samples(
-            foolbox_model, images, labels)
-        images = classification_filter['images']
-        labels = classification_filter['image_labels']
-
-        targets = np.zeros_like(labels)
-        adversarial_filter = batch_attack.get_adversarials(
-            approximate_model, images, targets, attack, False, True, batch_worker, num_workers)
-        potential_adversarials = adversarial_filter['adversarials']

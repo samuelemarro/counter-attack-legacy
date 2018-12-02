@@ -26,12 +26,14 @@ class AdversarialDistance(DistanceTool):
                  foolbox_model: foolbox.models.Model,
                  attack: foolbox.attacks.Attack,
                  p: np.float,
+                 failure_value: np.Infinity,
                  batch_worker: batch_processing.BatchWorker = None,
                  num_workers: int = 50):
         self.name = name
         self.foolbox_model = foolbox_model
         self.attack = attack
         self.p = p
+        self.failure_value = failure_value
         self.batch_worker = batch_worker
         self.num_workers = num_workers
 
@@ -42,7 +44,7 @@ class AdversarialDistance(DistanceTool):
         adversarial = self.attack(image, label)
 
         if adversarial is None:
-            return None
+            return self.failure_value
 
         distance = utils.lp_distance(adversarial, image, self.p, False)
         return distance
@@ -57,14 +59,14 @@ class AdversarialDistance(DistanceTool):
                                                            self.attack,
                                                            False,
                                                            False,
-                                                           self.batch_worker,
-                                                           self.num_workers)
+                                                           batch_worker=self.batch_worker,
+                                                           num_workers=self.num_workers)
 
         assert len(adversarial_filter['adversarials']) == len(images)
 
-        distances = [None] * len(images)
+        distances = [self.failure_value] * len(images)
 
-        # Fill in the distances computed by the attack, while leaving the failed attacks at None
+        # Fill in the distances computed by the attack, while leaving the failed attacks with failure_value
 
         successful_adversarial_indices = [i for i in range(
             len(images)) if adversarial_filter['adversarials'][i] is not None]

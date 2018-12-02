@@ -1,4 +1,5 @@
 import queue
+import warnings
 import numpy as np
 import foolbox
 import torch
@@ -186,12 +187,12 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
                      num_workers: int = 50):
     if remove_misclassified:
         _filter = get_correct_samples(foolbox_model, images, labels)
-
         # If there are no correctly classified samples, return early
         if len(_filter['images']) == 0:
             _filter['adversarials'] = []
             _filter['adversarial_predictions'] = []
             _filter['adversarial_labels'] = []
+            warnings.warn('No samples were classified correctly.')
             return _filter
 
     else:
@@ -221,6 +222,8 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
             _filter['adversarials'] = []
             _filter['adversarial_predictions'] = []
             _filter['adversarial_labels'] = []
+            warnings.warn(
+                'Could not find an adversarial sample for any of the provided samples.')
             return _filter
 
         _filter.filter(successful_adversarial_indices,
