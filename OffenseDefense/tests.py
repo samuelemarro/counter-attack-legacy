@@ -5,7 +5,7 @@ import torch
 import foolbox
 import matplotlib.pyplot as plt
 import sklearn.metrics as metrics
-from . import batch_attack, batch_processing, detectors, distance_tools, loaders, rejectors, utils
+from . import batch_attack, batch_processing, detectors, distance_tools, loaders, utils
 
 
 def accuracy_test(foolbox_model: foolbox.models.Model,

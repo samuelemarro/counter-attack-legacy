@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchvision
+import click
 
 import OffenseDefense
 import OffenseDefense.attacks as attacks
@@ -20,8 +21,12 @@ import OffenseDefense.models as model
 import OffenseDefense.tests as tests
 import OffenseDefense.training as training
 import OffenseDefense.utils as utils
-import OffenseDefense.rejectors as rejectors
 from OffenseDefense.models.pytorch.cifar.densenet import DenseNet
+
+
+@click.command()
+def attack_test(self):
+    print('Attack!')
 
 
 def prepare_model():
@@ -155,5 +160,7 @@ cifar_names = [
 ]
 
 if __name__ == '__main__':
+    #    pass
     # main()
+    # attack_test()
     batch_main()
