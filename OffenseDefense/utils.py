@@ -2,6 +2,12 @@ import gzip
 import pickle
 import collections
 import csv
+import datetime
+import pathlib
+import itertools
+import urllib
+from typing import Tuple
+
 import numpy as np
 import sklearn.metrics as metrics
 
@@ -128,15 +134,77 @@ def top_k_count(batch_predictions, labels, k=1):
     return len(np.nonzero(correct_samples)[0])
 
 
-def save_csv_table(path, table, header=None):
+def distance_statistics(distances: np.ndarray, failure_count: int) -> Tuple[float, float, float, float]:
+    """Computes the distance statistics, treating failures as Infinity.
+
+    Parameters
+    ----------
+    distances : numpy.ndarray
+        A 1D array with the computed distances (without the failed ones).
+    failure_count : [type]
+        The number of failed distance computations.
+
+    Returns
+    -------
+    Tuple[float, float, float, float]
+        A tuple composed of:
+            The average distance
+            The median distance
+            The success rate
+            The adjusted median distance, which treats failures as Infinity.
+    """
+
+    average_distance = np.average(distances)
+    median_distance = np.median(distances)
+    adjusted_median_distance = np.median(
+        distances + [np.Infinity] * failure_count)
+    success_rate = len(distances) / (len(distances) + failure_count)
+    return average_distance, median_distance, success_rate, adjusted_median_distance
+
+
+def save_results(path, table, command, info=None, header=None, delimiter='\t', transpose=False):
+    # Add the command used to the info
+    if info is None:
+        info = [['Command:'] + [command]]
+    else:
+        info = [['Command:'] + [command]] + info
+
+    # Add an empty row
+    info += []
+
+    # Transpose the table
+    if transpose:
+        table = itertools.zip_longest(*table, fillvalue='')
+
+    save_csv(path, table, info=info, header=header, delimiter=delimiter)
+
+
+def save_csv(path, table, info=None, header=None, delimiter='\t'):
+    pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, 'w', newline='') as file:
-        wr = csv.writer(file, quoting=csv.QUOTE_ALL)
+        wr = csv.writer(file, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
+
+        if info is not None:
+            for row in info:
+                wr.writerow(row)
 
         if header is not None:
             wr.writerow(header)
 
         for row in table:
+            if not isinstance(row, collections.Iterable):
+                row = [row]
             wr.writerow(row)
+
+
+def get_results_default_path(test_name):
+    return './results/{}/{:%Y-%m-%d %H-%M-%S}.csv'.format(test_name, datetime.datetime.now())
+
+
+def download(url, path):
+    r = urllib.request.urlopen(url)
+    content = r.read()
+    open(path, 'wb').write(content)
 
 
 class Filter(dict):

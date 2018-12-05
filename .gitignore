@@ -262,8 +262,12 @@ __pycache__/
 
 #Pretrained models
 pretrained_models
+
 #Data
 data
+
+#Test Results
+results
 
 #SetupTools output
 *.egg-info

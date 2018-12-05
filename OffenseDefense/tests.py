@@ -1,5 +1,5 @@
 import warnings
-from typing import List
+from typing import List, Tuple
 import numpy as np
 import torch
 import foolbox
@@ -67,21 +67,18 @@ def distance_comparison_test(foolbox_model: foolbox.models.Model,
             final_estimated_distances[distance_tool.name] += successful_estimated_distances
 
             tool_estimated_distances = final_estimated_distances[distance_tool.name]
-            success_rate = success_rates[distance_tool.name].avg
 
             if verbose:
-                # Compute the statistics, treating failures as samples with distance=Infinity
-                average_distance = np.average(tool_estimated_distances)
-                median_distance = np.median(tool_estimated_distances)
                 failure_count = success_rates[distance_tool.name].count - \
                     success_rates[distance_tool.name].sum
-                adjusted_median_distance = np.median(
-                    tool_estimated_distances + [np.Infinity] * failure_count)
+                average_distance, median_distance, _, adjusted_median_distance = utils.distance_statistics(
+                    tool_estimated_distances, failure_count)
 
                 print('{}:'.format(distance_tool.name))
                 print('Average Distance: {:2.2e}'.format(average_distance))
                 print('Median Distance: {:2.2e}'.format(median_distance))
-                print('Success Rate: {:2.2f}%'.format(success_rate * 100.0))
+                print('Success Rate: {:2.2f}%'.format(
+                    success_rate.avg * 100.0))
                 print('Adjusted Median Distance: {:2.2e}'.format(
                     adjusted_median_distance))
 
@@ -103,7 +100,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
                 p: int,
                 batch_worker: batch_processing.BatchWorker = None,
                 num_workers: int = 50,
-                verbose: bool = True):
+                verbose: bool = True) -> Tuple[float, np.ndarray]:
 
     success_rate = utils.AverageMeter()
     distances = []
@@ -121,14 +118,12 @@ def attack_test(foolbox_model: foolbox.models.Model,
             distances += list(utils.lp_distance(
                 adversarial_filter['adversarials'], adversarial_filter['images'], p, True))
 
-        # Compute the statistics, treating failures as samples with distance=Infinity
-        failure_count = success_rate.count - success_rate.sum
-        average_distance = np.average(distances)
-        median_distance = np.median(distances)
-        adjusted_median_distance = np.median(
-            distances + [np.Infinity] * failure_count)
-
         if verbose:
+            failure_count = success_rate.count - \
+                success_rate.sum
+            average_distance, median_distance, _, adjusted_median_distance = utils.distance_statistics(
+                distances, failure_count)
+
             print('Average Distance: {:2.2e}'.format(average_distance))
             print('Median Distance: {:2.2e}'.format(median_distance))
             print('Success Rate: {:2.2f}%'.format(success_rate.avg * 100.0))
@@ -137,7 +132,9 @@ def attack_test(foolbox_model: foolbox.models.Model,
 
             print('\n============\n')
 
-    return success_rate.avg, distances
+    failure_count = success_rate.count - success_rate.sum
+
+    return distances, failure_count
 
 
 def standard_detector_test(foolbox_model: foolbox.models.Model,
@@ -227,10 +224,8 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
             standard_failure_count = standard_success_rate.count - standard_success_rate.sum
             parallel_failure_count = parallel_success_rate.count - parallel_success_rate.sum
 
-            standard_average_distance = np.average(standard_distances)
-            standard_median_distance = np.median(standard_distances)
-            standard_adjusted_median_distance = np.median(
-                standard_distances + [np.Infinity] * standard_failure_count)
+            standard_average_distance, standard_median_distance, _, standard_adjusted_median_distance = utils.distance_statistics(
+                standard_distances, standard_failure_count)
             print('Average Standard Distance: {:2.5e}'.format(
                 standard_average_distance))
             print('Median Standard Distance: {:2.5e}'.format(
@@ -242,10 +237,8 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
             print('\n')
 
-            parallel_average_distance = np.average(parallel_distances)
-            parallel_median_distance = np.median(parallel_distances)
-            parallel_adjusted_median_distance = np.median(
-                parallel_distances + [np.Infinity] * parallel_failure_count)
+            parallel_average_distance, parallel_median_distance, _, parallel_adjusted_median_distance = utils.distance_statistics(
+                parallel_distances, parallel_failure_count)
             print('Parallel Average Distance: {:2.5e}'.format(
                 parallel_average_distance))
             print('Parallel Median Distance: {:2.5e}'.format(

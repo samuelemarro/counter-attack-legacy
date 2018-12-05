@@ -1,7 +1,8 @@
 numpy>=1.14.3
 foolbox>=1.5.0
-torchvision>=0.2.0
+torchvision>=0.2.1
 pytest>=4.0.0
 scikit_learn>=0.20.0
 matplotlib>=2.0.2
 randomgen>=1.15.1
+click>=7.0

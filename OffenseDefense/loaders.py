@@ -111,3 +111,24 @@ class RandomNoiseLoader:
         self._batch_counter += 1
 
         return samples, labels
+
+
+class MaxBatchLoader:
+    def __init__(self, loader, max_batches):
+        self.loader = loader
+        self.max_batches = max_batches
+        self._batch_counter = 0
+        self._loader_iterator = None
+
+    def __iter__(self):
+        self._batch_counter = 0
+        self._loader_iterator = iter(self.loader)
+        return self
+
+    def __next__(self):
+        if self._batch_counter == self.max_batches:
+            raise StopIteration()
+
+        self._batch_counter += 1
+
+        return next(self._loader_iterator)

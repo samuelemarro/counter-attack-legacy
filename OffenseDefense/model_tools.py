@@ -1,5 +1,6 @@
 import torch
 import torch.utils.data as data
+import torchvision
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import numpy as np
@@ -43,6 +44,24 @@ class AdversarialDataset(data.Dataset):
         if self.count_limit is None:
             return len(self.dataset)
         return self.count_limit
+
+
+def cifar_loader(dataset, path, train, download, batch_size, num_workers):
+    if dataset == 'cifar10':
+        data = torchvision.datasets.CIFAR10
+    elif dataset == 'cifar100':
+        data = torchvision.datasets.CIFAR100
+    else:
+        raise ValueError('dataset must be either \'cifar10\' or \'cifar100\'')
+
+    loader = data(root=path,
+                  train=train,
+                  download=download,
+                  transform=torchvision.transforms.ToTensor())
+    return torch.utils.data.DataLoader(loader,
+                                       batch_size=batch_size,
+                                       shuffle=False,
+                                       num_workers=num_workers)
 
 
 def cifar10_train_loader(num_workers, batch_size, flip, crop, normalize, shuffle):
