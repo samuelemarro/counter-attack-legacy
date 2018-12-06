@@ -34,17 +34,13 @@ def accuracy_test(foolbox_model: foolbox.models.Model,
     return [accuracy.avg for accuracy in accuracies]
 
 
-def distance_comparison_test(foolbox_model: foolbox.models.Model,
-                             test_distance_tools,
-                             loader: loaders.Loader,
-                             verbose: bool = True):
+def distance_test(foolbox_model: foolbox.models.Model,
+                  test_distance_tool,
+                  loader: loaders.Loader,
+                  verbose: bool = True):
 
-    final_estimated_distances = {}
-    success_rates = {}
-
-    for distance_tool in test_distance_tools:
-        final_estimated_distances[distance_tool.name] = []
-        success_rates[distance_tool.name] = utils.AverageMeter()
+    final_estimated_distances = []
+    success_rate = utils.AverageMeter()
 
     for images, labels in loader:
         # Remove misclassified samples
@@ -54,44 +50,38 @@ def distance_comparison_test(foolbox_model: foolbox.models.Model,
         images = correct_classification_filter['images']
         labels = correct_classification_filter['image_labels']
 
-        for distance_tool in test_distance_tools:
-            estimated_distances = distance_tool.get_distances(images)
-            successful_estimated_distances = [
-                distance for distance in estimated_distances if distance is not None]
+        estimated_distances = test_distance_tool.get_distances(images)
+        successful_estimated_distances = [
+            distance for distance in estimated_distances if distance is not None]
 
-            success_rates[distance_tool.name].update(
-                1, len(successful_estimated_distances))
-            success_rates[distance_tool.name].update(
-                0, len(images) - len(successful_estimated_distances))
+        success_rate.update(
+            1, len(successful_estimated_distances))
+        success_rate.update(
+            0, len(images) - len(successful_estimated_distances))
 
-            final_estimated_distances[distance_tool.name] += successful_estimated_distances
+        final_estimated_distances += successful_estimated_distances
 
-            tool_estimated_distances = final_estimated_distances[distance_tool.name]
+        if verbose:
+            failure_count = success_rate.count - success_rate.sum
+            average_distance, median_distance, _, adjusted_median_distance = utils.distance_statistics(
+                final_estimated_distances, failure_count)
 
-            if verbose:
-                failure_count = success_rates[distance_tool.name].count - \
-                    success_rates[distance_tool.name].sum
-                average_distance, median_distance, _, adjusted_median_distance = utils.distance_statistics(
-                    tool_estimated_distances, failure_count)
+            print('{}:'.format(test_distance_tool.name))
+            print('Average Distance: {:2.2e}'.format(average_distance))
+            print('Median Distance: {:2.2e}'.format(median_distance))
+            print('Success Rate: {:2.2f}%'.format(
+                success_rate.avg * 100.0))
+            print('Adjusted Median Distance: {:2.2e}'.format(
+                adjusted_median_distance))
 
-                print('{}:'.format(distance_tool.name))
-                print('Average Distance: {:2.2e}'.format(average_distance))
-                print('Median Distance: {:2.2e}'.format(median_distance))
-                print('Success Rate: {:2.2f}%'.format(
-                    success_rate.avg * 100.0))
-                print('Adjusted Median Distance: {:2.2e}'.format(
-                    adjusted_median_distance))
-
-                print('\n============\n')
+            print('\n============\n')
 
         if verbose:
             print('\n====================\n')
 
-    # Replace AverageMeters with the final averages
-    for key, value in success_rates.items():
-        success_rates[key] = value.avg
+    failure_count = success_rate.count - success_rate.sum
 
-    return final_estimated_distances, success_rates
+    return final_estimated_distances, failure_count
 
 
 def attack_test(foolbox_model: foolbox.models.Model,
@@ -226,30 +216,8 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
             standard_average_distance, standard_median_distance, _, standard_adjusted_median_distance = utils.distance_statistics(
                 standard_distances, standard_failure_count)
-            print('Average Standard Distance: {:2.5e}'.format(
-                standard_average_distance))
-            print('Median Standard Distance: {:2.5e}'.format(
-                standard_median_distance))
-            print('Standard Success Rate: {:2.2f}%'.format(
-                standard_success_rate.avg * 100.0))
-            print('Standard Adjusted Median Distance: {:2.5e}'.format(
-                standard_adjusted_median_distance))
-
-            print('\n')
-
             parallel_average_distance, parallel_median_distance, _, parallel_adjusted_median_distance = utils.distance_statistics(
                 parallel_distances, parallel_failure_count)
-            print('Parallel Average Distance: {:2.5e}'.format(
-                parallel_average_distance))
-            print('Parallel Median Distance: {:2.5e}'.format(
-                parallel_median_distance))
-            print('Parallel Success Rate: {:2.2f}%'.format(
-                parallel_success_rate.avg * 100.0))
-            print('Parallel Adjusted Median Distance: {:2.5e}'.format(
-                parallel_adjusted_median_distance))
-
-            print('\n')
-
             average_distance_difference = (
                 parallel_average_distance - standard_average_distance) / standard_average_distance
             median_distance_difference = (
@@ -269,4 +237,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
             print('\n============\n')
 
-    return standard_success_rate.avg, standard_distances, parallel_success_rate.avg, parallel_distances
+    standard_failure_count = standard_success_rate.count - standard_success_rate.sum
+    parallel_failure_count = parallel_success_rate.count - parallel_success_rate.sum
+
+    return standard_distances, standard_failure_count, parallel_distances, parallel_failure_count

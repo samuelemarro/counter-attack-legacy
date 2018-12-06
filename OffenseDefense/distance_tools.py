@@ -17,25 +17,29 @@ class DistanceTool:
 class AdversarialDistance(DistanceTool):
     """
     Finds the distance using an adversarial attack.
-    Returns np.Infinity if it can't find an adversarial
+    Returns a failure value if it can't find an adversarial
     sample
     """
 
     def __init__(self,
-                 name: str,
                  foolbox_model: foolbox.models.Model,
                  attack: foolbox.attacks.Attack,
                  p: np.float,
-                 failure_value: np.Infinity,
+                 failure_value: np.float,
                  batch_worker: batch_processing.BatchWorker = None,
-                 num_workers: int = 50):
-        self.name = name
+                 num_workers: int = 50,
+                 name: str = None):
         self.foolbox_model = foolbox_model
         self.attack = attack
         self.p = p
         self.failure_value = failure_value
         self.batch_worker = batch_worker
         self.num_workers = num_workers
+
+        if name is None:
+            name = attack.name()
+
+        self.name = name
 
     def get_distance(self, image):
         predictions = self.foolbox_model.predictions(image)

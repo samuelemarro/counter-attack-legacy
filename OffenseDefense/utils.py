@@ -64,9 +64,22 @@ def roc_curve(positive_values, negative_values):
     ground_truths = np.concatenate(
         [np.zeros_like(negative_values), np.ones_like(positive_values)], 0)
     predictions = np.concatenate([negative_values, positive_values], 0)
+
+    # Since sklearn.metrics.roc_curve cannot handle infinity, we
+    # use the maximum float value
+    max_value = np.finfo(np.float).max
+    predictions = [np.sign(x) * max_value if np.isinf(x)
+                   else x for x in predictions]
+    predictions = np.array(predictions)
+
     # Create the ROC curve
     false_positive_rate, true_positive_rate, thresholds = metrics.roc_curve(
         ground_truths, predictions, pos_label=1)
+
+    # Replace max_value with np.Infinity
+    thresholds = [np.sign(x) * np.Infinity if np.abs(x) ==
+                  max_value else x for x in thresholds]
+    thresholds = np.array(thresholds)
 
     return false_positive_rate, true_positive_rate, thresholds
 

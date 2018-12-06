@@ -4,6 +4,7 @@ import logging
 import pathlib
 import queue
 import sys
+import warnings
 
 import foolbox
 import matplotlib.pyplot as plt
@@ -11,6 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torchvision
+import sklearn
 import click
 
 import OffenseDefense
@@ -61,11 +63,11 @@ def batch_main():
     num_workers = 50
 
     adversarial_distance_tool = distance_tools.AdversarialDistance(
-        adversarial_attack.name(), foolbox_model, adversarial_attack, p, np.Infinity, batch_worker, num_workers)
+        foolbox_model, adversarial_attack, p, np.Infinity, batch_worker, num_workers)
     direction_distance_tool = distance_tools.AdversarialDistance(
-        direction_attack.name(), foolbox_model, direction_attack, p, np.Infinity)
+        foolbox_model, direction_attack, p, np.Infinity)
     black_box_distance_tool = distance_tools.AdversarialDistance(
-        black_box_attack.name(), foolbox_model, direction_attack, p, np.Infinity)
+        foolbox_model, direction_attack, p, np.Infinity)
 
     test_loader = loaders.TorchLoader(test_loader)
     adversarial_loader = loaders.AdversarialLoader(
@@ -101,21 +103,6 @@ def batch_main():
     tests.attack_test(detector_model,
                       adversarial_loader, detector_aware_attack, p)
 
-
-cifar_names = [
-    'Plane',
-    'Car',
-    'Bird',
-    'Cat',
-    'Deer',
-    'Dog',
-    'Frog',
-    'Horse',
-    'Ship',
-    'Truck'
-
-
-]
 
 # if __name__ == '__main__':
 #    pass
@@ -279,42 +266,38 @@ def get_attack_constructor(attack_name, p):
         raise ValueError('Attack not supported.')
 
 
-global_option_list = [
-    click.option('-d', '--dataset', default='cifar10', show_default=True,
-                 type=click.Choice(['cifar10', 'cifar100', 'imagenet'])),
-    click.option('-df', '--data-folder', default=None, type=click.Path(file_okay=False, dir_okay=True),
-                 help='The path to the folder where the dataset is stored (or will be downloaded). '
-                 'If unspecified, it defaults to ./data/$dataset$'),
-    click.option('-mp', '--model-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
-                 help='The path to the tar where the dataset is stored (or will be downloaded). '
-                 'Ignored if dataset is \'imagenet\'. '
-                 'If unspecified it defaults to ./pretrained_models/$dataset$.pth.tar . '),
-    click.option('-rp', '--results-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
-                 help='The path to the CSV file where the results will be saved. If unspecified '
-                 'it defaults to ./results/$command$/$datetime$.csv'),
-    click.option('-b', '--batch', default=5, show_default=True,
-                 type=click.IntRange(1, None)),
-    click.option('-mb', '--max-batches', default=0, show_default=True, type=click.IntRange(0, None),
-                 help='The maximum number of batches. 0 disables batch capping.'),
-    click.option('-lw', '--loader-workers', default=2, show_default=True, type=click.IntRange(1, None),
-                 help='The number of parallel workers that will load the samples from the dataset.'
-                 '0 disables parallelization.'),
-    click.option('-dm', '--download-model', is_flag=True,
-                 help='If the model file does not exist, download the pretrained model for the corresponding dataset.'),
-    click.option('-dd', '--download-dataset', is_flag=True,
-                 help='If the model data files do not exist, download them.'),
-    click.option('-v', '--verbose', is_flag=True)
-]
+def get_distance_tool(tool_name, options):
+    anti_attack = options['anti_attack']
+    anti_attack_p = options['anti_attack_p']
+    attack_workers = options['attack_workers']
+    batch_worker = options['batch_worker']
+    foolbox_model = options['foolbox_model']
+    parallelize_anti_attack = options['parallelize_anti_attack']
 
-attack_option_list = [
-    click.option('-a', '--attack', default='deepfool', show_default=True,
-                 type=click.Choice(['boundary', 'deepfool', 'fgsm'])),
-    click.option('-p', default='inf', show_default=True,
-                 type=click.Choice(['2', 'inf'])),
-    click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(0, None),
-                 help='The number of parallel workers that will be used to speed up the attack (if possible). '
-                 '0 disables parallelization.')
-]
+    if tool_name == 'anti-attack':
+        # We treat failures as Infinity (max_value) because failed
+        # detections means that the sample is likely genuine. (or not?)
+
+        if parallelize_anti_attack:
+            distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
+                                                               anti_attack_p, np.Infinity, batch_worker, attack_workers)
+        else:
+            distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
+                                                               anti_attack_p, np.Infinity)
+    else:
+        raise ValueError('Distance tool not supported.')
+
+    return distance_tool
+
+
+supported_attacks = ['boundary', 'deepfool', 'fgsm']
+parallelizable_attacks = ['deepfool', 'fgsm']
+differentiable_attacks = ['deepfool', 'fgsm']
+
+supported_distance_tools = ['anti-attack']
+supported_detectors = supported_distance_tools
+
+supported_ps = ['2', 'inf']
 
 
 def add_options(options):
@@ -326,10 +309,33 @@ def add_options(options):
 
 
 def global_options(func):
-    @add_options(global_option_list)
+    @click.argument('dataset', type=click.Choice(['cifar10', 'cifar100', 'imagenet']))
+    @click.option('-df', '--data-folder', default=None, type=click.Path(file_okay=False, dir_okay=True),
+                  help='The path to the folder where the dataset is stored (or will be downloaded). '
+                  'If unspecified, it defaults to ./data/$dataset$')
+    @click.option('-mp', '--model-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
+                  help='The path to the tar where the dataset is stored (or will be downloaded). '
+                  'Ignored if dataset is \'imagenet\'. '
+                  'If unspecified it defaults to ./pretrained_models/$dataset$.pth.tar')
+    @click.option('-rp', '--results-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
+                  help='The path to the CSV file where the results will be saved. If unspecified '
+                  'it defaults to ./results/$command$/$datetime$.csv')
+    @click.option('-b', '--batch', default=5, show_default=True,
+                  type=click.IntRange(1, None))
+    @click.option('-mb', '--max-batches', default=0, show_default=True, type=click.IntRange(0, None),
+                  help='The maximum number of batches. 0 disables batch capping.')
+    @click.option('-lw', '--loader-workers', default=2, show_default=True, type=click.IntRange(0, None),
+                  help='The number of parallel workers that will load the samples from the dataset.'
+                  '0 disables parallelization.')
+    @click.option('-dm', '--download-model', is_flag=True,
+                  help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
+    @click.option('-dd', '--download-dataset', is_flag=True,
+                  help='If the model data files do not exist, download them.')
+    @click.option('-v', '--verbose', is_flag=True,
+                  help='Enables verbose output.')
     @click.pass_context
     @functools.wraps(func)
-    def _parse_global_options(ctx, dataset, data_folder, model_path, results_path, batch, max_batches, loader_workers, download_dataset, download_model, verbose, *args, **kwargs):
+    def _parse_global_options(ctx, dataset, data_folder, model_path, results_path, batch, max_batches, loader_workers, download_model, download_dataset, verbose, *args, **kwargs):
         if data_folder is None:
             data_folder = './data/' + dataset
 
@@ -373,34 +379,117 @@ def global_options(func):
     return _parse_global_options
 
 
-def attack_options(func):
-    @global_options
-    @add_options(attack_option_list)
-    @functools.wraps(func)
-    def _parse_attack_options(parsed_global_options, attack, p, attack_workers, *args, **kwargs):
-        if p == '2':
-            p = 2
-        elif p == 'inf':
-            p = np.inf
+def attack_options(attacks):
+    def _attack_options(func):
+        @global_options
+        @click.argument('attack', type=click.Choice(attacks))
+        @click.option('-p', default='inf', show_default=True, type=click.Choice(supported_ps),
+                      help='The L_p distance of the attack.')
+        @click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
+                      help='The number of parallel workers that will be used to speed up the attack (if possible).')
+        @click.option('-lt', '--loader-type', default='standard', show_default=True, type=click.Choice(['standard', 'adversarial']),
+                      help='The type of loader that will be used. \'standard\' uses the standard loader, \'adversarial\''
+                      'replaces the samples with their adversarial samples (removing failed attacks).')
+        @click.option('-la', '--loader-attack', default='deepfool', show_default=True, type=click.Choice(supported_attacks),
+                      help='The attack that will be used by the loader. Ignored if loader-type is not \'adversarial\'.')
+        @click.option('-lap', '--loader-attack-p', default='inf', show_default=True, type=click.Choice(supported_ps),
+                      help='The L_p distance of the loader attack. Ignored if loader-type is not \'adversarial\'.')
+        @click.option('-nap', '--no-attack-parallelization', is_flag=True,
+                      help='Disables attack parallelization. This might increase the execution time.')
+        @functools.wraps(func)
+        def _parse_attack_options(parsed_global_options, attack, p, attack_workers, loader_type, loader_attack, loader_attack_p, no_attack_parallelization, *args, **kwargs):
+            foolbox_model = parsed_global_options['foolbox_model']
+            pytorch_model = parsed_global_options['pytorch_model']
+            test_loader = parsed_global_options['test_loader']
+            train_loader = parsed_global_options['train_loader']
 
-        pytorch_model = parsed_global_options['pytorch_model']
+            if p == '2':
+                p = 2
+            elif p == 'inf':
+                p = np.inf
 
-        if attack_workers == 0:
-            batch_worker = None
-        else:
+            enable_attack_parallelization = not no_attack_parallelization
+
+            parallelize_attack = enable_attack_parallelization and attack in parallelizable_attacks
+
             batch_worker = batch_attack.PyTorchWorker(pytorch_model)
 
-        parsed_attack_options = dict(parsed_global_options)
+            if loader_type == 'standard':
+                pass
+            elif loader_type == 'adversarial':
+                parallelize_loader_attack = enable_attack_parallelization and loader_attack in parallelizable_attacks
 
-        # We don't immediately parse 'attack' because every test needs a specific configuration
-        parsed_attack_options['attack_name'] = attack
+                loader_attack_constructor = get_attack_constructor(
+                    loader_attack, loader_attack_p)
+                loader_attack = loader_attack_constructor(
+                    foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(loader_attack_p))
 
-        parsed_attack_options['batch_worker'] = batch_worker
-        parsed_attack_options['attack_workers'] = attack_workers
-        parsed_attack_options['p'] = p
+                if parallelize_loader_attack:
+                    train_loader = loaders.AdversarialLoader(
+                        train_loader, foolbox_model, loader_attack, True, batch_worker, attack_workers)
+                    test_loader = loaders.AdversarialLoader(
+                        test_loader, foolbox_model, loader_attack, True, batch_worker, attack_workers)
+                else:
+                    train_loader = loaders.AdversarialLoader(
+                        train_loader, foolbox_model, loader_attack, True)
+                    test_loader = loaders.AdversarialLoader(
+                        test_loader, foolbox_model, loader_attack, True)
 
-        return func(parsed_attack_options, *args, **kwargs)
-    return _parse_attack_options
+            parsed_attack_options = dict(parsed_global_options)
+
+            # We don't immediately parse 'attack' because every test needs a specific configuration
+            parsed_attack_options['attack_name'] = attack
+
+            parsed_attack_options['batch_worker'] = batch_worker
+            parsed_attack_options['attack_workers'] = attack_workers
+            parsed_attack_options['enable_attack_parallelization'] = enable_attack_parallelization
+            parsed_attack_options['loader_attack'] = loader_attack
+            parsed_attack_options['p'] = p
+            parsed_attack_options['parallelize_attack'] = parallelize_attack
+            parsed_attack_options['test_loader'] = test_loader
+            parsed_attack_options['train_loader'] = train_loader
+
+            return func(parsed_attack_options, *args, **kwargs)
+        return _parse_attack_options
+    return _attack_options
+
+# Note: This decorator does not add the 'distance_tool' argument because
+# different commands will accept different tools or non-tools. If you want to parse a
+# distance_tool, call get_distance_tool.
+
+
+def distance_options(func):
+    @attack_options(supported_attacks)
+    @click.option('-aa', '--anti-attack', default='deepfool', type=click.Choice(supported_attacks),
+                  help='The anti-attack that will be used (if required).')
+    @click.option('-aap', '--anti-attack-p', default=None, type=click.Choice(supported_ps),
+                  help='The L_p distance of the anti-attack. If unspecified it defaults to p.')
+    @functools.wraps(func)
+    def _parse_distance_options(parsed_attack_options, anti_attack, anti_attack_p, *args, **kwargs):
+        foolbox_model = parsed_attack_options['foolbox_model']
+        p = parsed_attack_options['p']
+        enable_attack_parallelization = parsed_attack_options['enable_attack_parallelization']
+
+        if anti_attack_p is None:
+            anti_attack_p = p
+
+        parallelize_anti_attack = (
+            anti_attack in parallelizable_attacks) and enable_attack_parallelization
+
+        anti_attack_constructor = get_attack_constructor(
+            anti_attack, anti_attack_p)
+        anti_attack = anti_attack_constructor(
+            foolbox_model, foolbox.criteria.Misclassification(),
+            distance_tools.LpDistance(anti_attack_p))
+
+        parsed_distance_options = dict(parsed_attack_options)
+
+        parsed_distance_options['anti_attack'] = anti_attack
+        parsed_distance_options['anti_attack_p'] = anti_attack_p
+        parsed_distance_options['parallelize_anti_attack'] = parallelize_anti_attack
+
+        return func(parsed_distance_options, *args, **kwargs)
+    return _parse_distance_options
 
 
 @click.group()
@@ -409,7 +498,7 @@ def main(*args):
 
 
 @main.command()
-@attack_options
+@attack_options(supported_attacks)
 def attack(options):
     command = options['command']
     attack_name = options['attack_name']
@@ -431,10 +520,12 @@ def attack(options):
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
 
-    info = [['Success Rate'] + ['{:2.2f}%'.format(success_rate * 100.0)]] + [['Average Distance'] + ['{:2.2e}'.format(average_distance)]] + [
-        ['Median Distance'] + ['{:2.2e}'.format(median_distance)]] + [['Adjusted Median Distance'] + ['{:2.2e}'.format(adjusted_median_distance)]]
+    info = [['Success Rate', '{:2.2f}%'.format(success_rate * 100.0)],
+            ['Average Distance', '{:2.2e}'.format(average_distance)],
+            ['Median Distance', '{:2.2e}'.format(median_distance)],
+            ['Adjusted Median Distance', '{:2.2e}'.format(adjusted_median_distance)]]
 
-    # TODO: Add statistics to the tests. Detection_test and its variants. ImageNet.
+    # TODO: Detection_test and its variants. ImageNet.
 
     header = ['Distances']
 
@@ -460,6 +551,132 @@ def accuracy(options, top_ks):
 
     header = ['Top-{}'.format(top_k) for top_k in top_ks]
     utils.save_results(results_path, [accuracies], command, header=header)
+
+
+@main.command()
+@distance_options
+@click.argument('detector', type=click.Choice(supported_detectors))
+def detect(options, detector):
+    command = options['command']
+    attack_name = options['attack_name']
+    attack_workers = options['attack_workers']
+    batch_worker = options['batch_worker']
+    foolbox_model = options['foolbox_model']
+    test_loader = options['test_loader']
+    p = options['p']
+    results_path = options['results_path']
+    verbose = options['verbose']
+
+    attack_constructor = get_attack_constructor(attack_name, p)
+    attack = attack_constructor(
+        foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
+
+    distance_tool = get_distance_tool(detector, options)
+    detector = detectors.DistanceDetector(distance_tool)
+
+    genuine_scores, adversarial_scores, success_rate = tests.standard_detector_test(
+        foolbox_model, test_loader, attack, detector, batch_worker, attack_workers, verbose)
+
+    false_positive_rates, true_positive_rates, thresholds = utils.roc_curve(
+        genuine_scores, adversarial_scores)
+
+    best_threshold, best_tpr, best_fpr = utils.get_best_threshold(
+        true_positive_rates, false_positive_rates, thresholds)
+    area_under_curve = sklearn.metrics.auc(
+        false_positive_rates, true_positive_rates)
+
+    info = [['Success Rate', '{:2.2f}%'.format(success_rate * 100.0)],
+            ['ROC AUC', '{:2.2f}%'.format(area_under_curve * 100.0)],
+            ['Best Threshold', '{:2.2e}'.format(best_threshold)],
+            ['Best True Positive Rate', '{:2.2f}%'.format(best_tpr * 100.0)],
+            ['Best False Positive Rate', '{:2.2f}%'.format(best_fpr * 100.0)]]
+
+    header = ['Genuine Scores', 'Adversarial Scores',
+              'Thresholds', 'True Positive Rates', 'False Positive Rates']
+
+    true_positive_rates = ['{:2.2}%'.format(
+        true_positive_rate) for true_positive_rate in true_positive_rates]
+    false_positive_rates = ['{:2.2}%'.format(
+        false_positive_rate) for false_positive_rate in false_positive_rates]
+
+    columns = [genuine_scores, adversarial_scores,
+               thresholds, true_positive_rates, false_positive_rates]
+
+    utils.save_results(results_path, columns, command,
+                       info=info, header=header, transpose=True)
+
+
+@main.command()
+@distance_options
+@click.argument('distance-tool', type=click.Choice(supported_detectors))
+def distance(options, distance_tool):
+    command = options['command']
+    foolbox_model = options['foolbox_model']
+    results_path = options['results_path']
+    test_loader = options['test_loader']
+    verbose = options['verbose']
+    distance_tool = get_distance_tool(distance_tool, options)
+
+    distances, failure_count = tests.distance_test(
+        foolbox_model, distance_tool, test_loader, verbose)
+
+    average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
+        distances, failure_count)
+
+    info = [['Attack Success Rate', '{:2.2f}%'.format(success_rate * 100.0)],
+            ['Average Distance', '{:2.2e}'.format(average_distance)],
+            ['Median Distance', '{:2.2e}'.format(median_distance)],
+            ['Adjusted Median Distance', '{:2.2e}'.format(adjusted_median_distance)]]
+
+    header = ['Distances']
+
+    utils.save_results(results_path, [distances], command,
+                       info=info, header=header, transpose=True)
+
+
+@main.command()
+@attack_options(parallelizable_attacks)
+def parallelization(options):
+    attack_name = options['attack_name']
+    attack_workers = options['attack_workers']
+    batch_worker = options['batch_worker']
+    command = options['command']
+    foolbox_model = options['foolbox_model']
+    p = options['p']
+    results_path = options['results_path']
+    test_loader = options['test_loader']
+    verbose = options['verbose']
+
+    attack_constructor = get_attack_constructor(attack_name, p)
+    attack = attack_constructor(
+        foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
+
+    standard_distances, standard_failure_count, parallel_distances, parallel_failure_count = tests.parallelization_test(
+        foolbox_model, test_loader, attack, p, batch_worker, attack_workers, verbose)
+
+    standard_average_distance, standard_median_distance, standard_success_rate, standard_adjusted_median_distance = utils.distance_statistics(
+        standard_distances, standard_failure_count)
+    parallel_average_distance, parallel_median_distance, parallel_success_rate, parallel_adjusted_median_distance = utils.distance_statistics(
+        parallel_distances, parallel_failure_count)
+
+    average_distance_difference = (
+        parallel_average_distance - standard_average_distance) / standard_average_distance
+    median_distance_difference = (
+        parallel_median_distance - standard_median_distance) / standard_median_distance
+    success_rate_difference = (
+        parallel_success_rate - standard_success_rate) / standard_success_rate
+    adjusted_median_distance_difference = (
+        parallel_adjusted_median_distance - standard_adjusted_median_distance) / standard_adjusted_median_distance
+
+    info = [['Average Distance Relative Difference', average_distance_difference],
+            ['Median Distance Relative Difference', median_distance_difference],
+            ['Success Rate Difference', success_rate_difference],
+            ['Adjusted Median Distance Difference', adjusted_median_distance_difference]]
+
+    header = ['Standard Distances', 'Parallel Distances']
+
+    utils.save_results(results_path, [standard_distances, parallel_distances], command,
+                       info=info, header=header, transpose=True)
 
 
 if __name__ == '__main__':
