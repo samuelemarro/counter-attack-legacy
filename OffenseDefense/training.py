@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 from . import utils
 
@@ -16,7 +17,7 @@ class MaxEpoch(StopCriterion):
         return epoch <= self.max_epoch
 
 
-def train_torch(model, loader, criterion, optimizer, stop_criterion, use_cuda, verbose=True):
+def train_torch(model, loader, loss_fn, optimizer, stop_criterion, use_cuda, verbose=True):
     model.train()
 
     epoch = 0
@@ -40,7 +41,7 @@ def train_torch(model, loader, criterion, optimizer, stop_criterion, use_cuda, v
 
             # Compute the outputs
             outputs = model(torch_images)
-            loss = criterion(outputs, torch_labels)
+            loss = loss_fn(outputs, torch_images, torch_labels)
 
             # Compute the statistics
             outputs = outputs.detach().cpu().numpy()
@@ -80,3 +81,21 @@ def train_torch(model, loader, criterion, optimizer, stop_criterion, use_cuda, v
 
         proceed = stop_criterion.proceed(
             epoch, average_loss.avg, top1_accuracy.avg)
+
+
+def train_detector(model, detector, failure_value, loader, optimizer, stop_criterion, use_cuda, verbose=True):
+    # TODO: Should it precompute the distances?
+
+    def loss_fn(outputs, images, labels):
+        scores = detector.get_scores(images.cpu().numpy())
+
+        # Remove failed scores
+        scores = [score for score in scores if score is not failure_value]
+        scores = np.array(scores)
+        scores = torch.from_numpy(scores)
+
+        loss = torch.nn.MSELoss()(outputs, scores)
+        return loss
+
+    train_torch(model, loader, loss_fn, optimizer,
+                stop_criterion, use_cuda, verbose)

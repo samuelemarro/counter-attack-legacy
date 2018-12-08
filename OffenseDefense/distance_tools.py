@@ -98,24 +98,21 @@ class AdversarialDistance(DistanceTool):
         return distances
 
 
-"""
-Returns the unnormalized L_p distance.
-
-If you're wondering what's going on: foolbox attacks accept
-a distance type instead of an actual object. So, if you want
-to use the MSE distance, you have to pass foolbox.distances.MSE.
-foolbox then calls the type and builds the distance (e.g. MSE(...)).
-This usually works well, but it means that we can't pass any other
-arguments to the distance. We therefore use this wrapper trick to 
-pass the argument 'p': we init and pass the LpDistance object.
-foolbox will attempt to create the distance by calling distance(...)
-However, since it's an instance, calls to the class are handled by
-__call__. In __call__, we init WrappedLpDistance with the provided
-arguments (in addition to p) and return it.
-"""
-
-
 class LpDistance(foolbox.distances.Distance):
+    """Returns the unnormalized L_p distance.
+
+    If you're wondering what's going on: foolbox attacks accept
+    a distance type instead of an actual object. So, if you want
+    to use the MSE distance, you have to pass foolbox.distances.MSE.
+    foolbox then calls the type and builds the distance (e.g. MSE(...)).
+    This usually works well, but it means that we can't pass any other
+    arguments to the distance. We therefore use this wrapper trick to 
+    pass the argument 'p': we init and pass the LpDistance object.
+    foolbox will attempt to create the distance by calling distance(...)
+    However, since it's an instance, calls to the class are handled by
+    __call__. In __call__, we init WrappedLpDistance with the provided
+    arguments (in addition to p) and return it.
+    """
     class WrappedLpDistance(foolbox.distances.Distance):
         def __init__(self, p, reference=None, other=None, bounds=None, value=None):
             self.p = p

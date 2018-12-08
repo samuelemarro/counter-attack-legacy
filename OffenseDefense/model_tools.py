@@ -46,61 +46,6 @@ class AdversarialDataset(data.Dataset):
         return self.count_limit
 
 
-def cifar_loader(dataset, path, train, download, batch_size, num_workers):
-    if dataset == 'cifar10':
-        data = torchvision.datasets.CIFAR10
-    elif dataset == 'cifar100':
-        data = torchvision.datasets.CIFAR100
-    else:
-        raise ValueError('dataset must be either \'cifar10\' or \'cifar100\'')
-
-    loader = data(root=path,
-                  train=train,
-                  download=download,
-                  transform=torchvision.transforms.ToTensor())
-    return torch.utils.data.DataLoader(loader,
-                                       batch_size=batch_size,
-                                       shuffle=False,
-                                       num_workers=num_workers)
-
-
-def cifar10_train_loader(num_workers, batch_size, flip, crop, normalize, shuffle):
-    transformations = [transforms.ToTensor()]
-    if flip:
-        transformations.append(transforms.RandomHorizontalFlip())
-    if crop:
-        transformations.append(transforms.RandomCrop(32, padding=4))
-    if normalize:
-        transformations.append(transforms.Normalize(
-            (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)))
-
-    dataset = datasets.CIFAR10(root='./data',
-                               train=True,
-                               download=True,
-                               transform=transforms.Compose(transformations))
-    return data.DataLoader(dataset,
-                           batch_size=batch_size,
-                           shuffle=shuffle,
-                           num_workers=num_workers)
-
-
-def cifar10_test_loader(num_workers, batch_size, normalize, shuffle):
-    transformations = [transforms.ToTensor()]
-
-    if normalize:
-        transformations.append(transforms.Normalize(
-            (0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)))
-
-    dataset = datasets.CIFAR10(root='./data',
-                               train=False,
-                               download=False,
-                               transform=transforms.Compose(transformations))
-    return data.DataLoader(dataset,
-                           batch_size=batch_size,
-                           shuffle=shuffle,
-                           num_workers=num_workers)
-
-
 def load_model(base_model, path, training_model, data_parallel):
     if data_parallel:
         model = torch.nn.DataParallel(base_model)

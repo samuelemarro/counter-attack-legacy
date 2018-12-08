@@ -3,12 +3,10 @@
 * Find a policy for failures in adversarial attacks
 * Check custom filters for utils.Filter
 * Check get_best_threshold
-* Add support for test recipes? (such as files with test specifications)
-* Handling parallel attacks requires quite a lot of considerations. Hide them from the user
 * Implement logging
 * get_adversarials returning a Filter is confusing
 * Checking the correct classifications in get_adversarial_samples is sometimes redundant
 * Complete setup.py
-* Test when there are no successful adversarial samples
-* Rename variables to encompass more than images?
-* evasion_test raises a ValueError due to a shape mismatch in lp_distance
+* Complete differentiable_evasion
+* Add ImageNet support
+* Add loader overloading
