@@ -48,6 +48,7 @@ def cifar_loader(dataset, path, train, download, batch_size, num_workers):
     else:
         raise ValueError('dataset must be either \'cifar10\' or \'cifar100\'')
 
+    pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     try:
         dataset = data(root=path,
                        train=train,
@@ -65,6 +66,7 @@ def cifar_loader(dataset, path, train, download, batch_size, num_workers):
 def imagenet_loader(path, train, download, batch_size, num_workers):
     if not pathlib.Path(path).exists():
         if download:
+            pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
             raise NotImplementedError()
         else:
             raise RuntimeError(
@@ -124,12 +126,11 @@ def download_pretrained_model(dataset, path):
         try:
             print('Downloading from {}'.format(download_link))
             utils.download(download_link, path)
-        except:
-            raise
+        except IOError as e:
             raise IOError(
-                'Could not download the pretrained model for \'{}\' from \'{}\'. '
+                'Could not download the pretrained model for \'{}\' from \'{}\': {}. '
                 'Please check that your internet connection is working, '
-                'or download the model manually and store it in {}.'.format(dataset, download_link, path))
+                'or download the model manually and store it in {}.'.format(dataset, download_link, e, path)) from e
     elif dataset == 'imagenet':
         model = torchvision.models.densenet161(pretrained=True)
         model_tools.save_model(model, path)
@@ -177,6 +178,7 @@ def get_pytorch_model(dataset: str, path: str, download: bool) -> torch.nn.Modul
 
     if not pathlib.Path(path).exists():
         if download:
+            pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
             download_pretrained_model(dataset, path)
         else:
             raise RuntimeError(
