@@ -1,6 +1,7 @@
 import configparser
 import functools
 import logging
+import os
 import pathlib
 import queue
 import sys
@@ -48,17 +49,42 @@ def cifar_loader(dataset, path, train, download, batch_size, num_workers):
         raise ValueError('dataset must be either \'cifar10\' or \'cifar100\'')
 
     try:
-        loader = data(root=path,
-                      train=train,
-                      download=download,
-                      transform=torchvision.transforms.ToTensor())
+        dataset = data(root=path,
+                       train=train,
+                       download=download,
+                       transform=torchvision.transforms.ToTensor())
     except RuntimeError:
         raise RuntimeError(
             'Dataset files not found. Use --download-dataset to automatically download missing files.')
-    return torch.utils.data.DataLoader(loader,
+    return torch.utils.data.DataLoader(dataset,
                                        batch_size=batch_size,
                                        shuffle=train,
                                        num_workers=num_workers)
+
+
+def imagenet_loader(path, train, download, batch_size, num_workers):
+    if not pathlib.Path(path).exists():
+        if download:
+            raise NotImplementedError()
+        else:
+            raise RuntimeError(
+                'Dataset files not found. Use --download-dataset to automatically download missing files.')
+
+    if train:
+        data_dir = os.path.join(path, 'train')
+    else:
+        data_dir = os.path.join(path, 'val')
+
+    dataset = torchvision.datasets.ImageFolder(
+        data_dir,
+        torchvision.transforms.ToTensor())
+
+    loader = torch.utils.data.DataLoader(dataset,
+                                         batch_size=batch_size,
+                                         shuffle=train,
+                                         num_workers=num_workers)
+
+    return loader
 
 
 def get_loaders(dataset, path, batch_size, num_workers, download):
@@ -68,12 +94,16 @@ def get_loaders(dataset, path, batch_size, num_workers, download):
         test_loader = cifar_loader(
             dataset, path, False, download, batch_size, num_workers)
 
-        train_loader = loaders.TorchLoader(train_loader)
-        test_loader = loaders.TorchLoader(test_loader)
     elif dataset == 'imagenet':
-        raise NotImplementedError()
+        train_loader = imagenet_loader(
+            path, True, download, batch_size, num_workers)
+        test_loader = imagenet_loader(
+            path, False, download, batch_size, num_workers)
     else:
         raise ValueError('Dataset not supported.')
+
+    train_loader = loaders.TorchLoader(train_loader)
+    test_loader = loaders.TorchLoader(test_loader)
 
     return train_loader, test_loader
 
@@ -83,7 +113,7 @@ def download_pretrained_model(dataset, path):
         try:
             config = configparser.ConfigParser()
             config.read('config.ini')
-            print(list(config.sections()))
+
             download_link = config.get('model_links', dataset)
         except KeyError:
             raise IOError(
@@ -92,8 +122,10 @@ def download_pretrained_model(dataset, path):
             raise IOError('Could not read config.ini')
 
         try:
+            print('Downloading from {}'.format(download_link))
             utils.download(download_link, path)
         except:
+            raise
             raise IOError(
                 'Could not download the pretrained model for \'{}\' from \'{}\'. '
                 'Please check that your internet connection is working, '
@@ -147,7 +179,7 @@ def get_pytorch_model(dataset: str, path: str, download: bool) -> torch.nn.Modul
         if download:
             download_pretrained_model(dataset, path)
         else:
-            raise click.BadOptionUsage(
+            raise RuntimeError(
                 'No model found: {}. Use --download-model to automatically download missing models.'.format(path))
 
     model = model_tools.load_model(model, path, False, False)
@@ -225,9 +257,9 @@ def get_distance_tool(tool_name, options):
     parallelize_anti_attack = options['parallelize_anti_attack']
 
     if tool_name == 'anti-attack':
-        # We treat failures as Infinity because failed
-        # detections means that the sample is likely genuine. (or not?)
-        # TODO: I set those to -Infinity
+        # We treat failures as -Infinity because failed
+        # detection means that the sample is likely adversarial
+
         if parallelize_anti_attack:
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
                                                                anti_attack_p, -np.Infinity, batch_worker, attack_workers)
@@ -277,7 +309,7 @@ def global_options(func):
     @click.option('-dm', '--download-model', is_flag=True,
                   help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
     @click.option('-dd', '--download-dataset', is_flag=True,
-                  help='If the model data files do not exist, download them.')
+                  help='If the dataset files do not exist, download them (not supported for ImageNet).')
     @click.option('-v', '--verbose', is_flag=True,
                   help='Enables verbose output.')
     @click.pass_context
