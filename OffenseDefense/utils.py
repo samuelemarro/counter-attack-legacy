@@ -1,8 +1,10 @@
 import gzip
 import pickle
 import collections
+import configparser
 import csv
 import datetime
+import json
 import pathlib
 import itertools
 import urllib
@@ -218,6 +220,33 @@ def download(url, path):
     r = urllib.request.urlopen(url)
     content = r.read()
     open(path, 'wb').write(content)
+
+
+def download_from_config(config_path, download_path, link_section, link_name):
+    try:
+        config = configparser.ConfigParser()
+        config.read(config_path)
+
+        download_link = config.get(link_section, link_name)
+    except KeyError:
+        raise IOError(
+            'config.ini does not contain the link for \'{}\''.format(link_name))
+    except IOError:
+        raise IOError('Could not read config.ini')
+    try:
+        print('Downloading from {}'.format(download_link))
+        download(download_link, download_path)
+    except IOError as e:
+        raise IOError(
+            'Could not download from \'{}\': {}. '
+            'Please check that your internet connection is working, '
+            'or download the model manually and store it in {}.'.format(download_link, e, download_path)) from e
+
+
+def load_json(path):
+    with open('data.json') as f:
+        data = json.load(f)
+    return data
 
 
 class Filter(dict):

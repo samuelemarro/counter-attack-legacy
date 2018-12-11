@@ -4,7 +4,9 @@ import logging
 import os
 import pathlib
 import queue
+import shutil
 import sys
+import tarfile
 import warnings
 
 import foolbox
@@ -63,11 +65,58 @@ def cifar_loader(dataset, path, train, download, batch_size, num_workers):
                                        num_workers=num_workers)
 
 
+def download_imagenet(path):
+    path = pathlib.Path(path)
+    path.mkdir(parents=True, exist_ok=True)
+
+    train_path = path / 'train'
+    train_file_path = train_path / 'ILSVRC2012_img_train.tar'
+    val_path = path / 'val'
+    val_file_path = val_path / 'ILSVRC2012_img_val.tar'
+
+    train_path.mkdir(parents=True, exist_ok=True)
+    utils.download_from_config(
+        'config.ini', train_file_path, 'dataset_links', 'imagenet_train')
+    tarfile.open(train_file_path).extractall(train_path)
+    os.remove(train_file_path)
+
+    for file_name in os.listdir(train_path):
+        print(file_name)
+        # Skip files that are not tar files
+        if not file_name.endswith('.tar'):
+            continue
+
+        class_file_path = train_path / file_name
+        class_path = train_path / file_name[:-4]
+
+        #Create /aaaaa
+        os.mkdir(class_path)
+        # Extract aaaaa.tar in /aaaaa
+        tarfile.open(class_file_path).extractall(class_path)
+        # Remove aaaaa.tar
+        os.remove(class_file_path)
+
+    val_path.mkdir(parents=True, exist_ok=True)
+    utils.download_from_config(
+        'config.ini', val_file_path, 'dataset_links', 'imagenet_val')
+    tarfile.open(val_file_path).extractall(val_path)
+    os.remove(val_file_path)
+
+    ground_truths = utils.load_json('imagenet_val_ground_truth.txt')[0]
+    classes = ground_truths['classes']
+    labels = ground_truths['labels']
+
+    for _class in classes:
+        os.mkdir(val_path / _class)
+
+    for file_name, label in labels.items():
+        shutil.move(val_path / file_name, val_file_path / label)
+
+
 def imagenet_loader(path, train, download, batch_size, num_workers):
     if not pathlib.Path(path).exists():
         if download:
-            pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
-            raise NotImplementedError()
+            download_imagenet(path)
         else:
             raise RuntimeError(
                 'Dataset files not found. Use --download-dataset to automatically download missing files.')
@@ -77,9 +126,13 @@ def imagenet_loader(path, train, download, batch_size, num_workers):
     else:
         data_dir = os.path.join(path, 'val')
 
+    transforms = [torchvision.transforms.Resize(256),
+                  torchvision.transforms.CenterCrop(224),
+                  torchvision.transforms.ToTensor()]
+
     dataset = torchvision.datasets.ImageFolder(
         data_dir,
-        torchvision.transforms.ToTensor())
+        torchvision.transforms.Compose(transforms))
 
     loader = torch.utils.data.DataLoader(dataset,
                                          batch_size=batch_size,
@@ -112,25 +165,9 @@ def get_loaders(dataset, path, batch_size, num_workers, download):
 
 def download_pretrained_model(dataset, path):
     if dataset in ['cifar10', 'cifar100']:
-        try:
-            config = configparser.ConfigParser()
-            config.read('config.ini')
-
-            download_link = config.get('model_links', dataset)
-        except KeyError:
-            raise IOError(
-                'config.ini does not contain the link for \'{}\''.format(dataset))
-        except IOError:
-            raise IOError('Could not read config.ini')
-
-        try:
-            print('Downloading from {}'.format(download_link))
-            utils.download(download_link, path)
-        except IOError as e:
-            raise IOError(
-                'Could not download the pretrained model for \'{}\' from \'{}\': {}. '
-                'Please check that your internet connection is working, '
-                'or download the model manually and store it in {}.'.format(dataset, download_link, e, path)) from e
+        file_path = path + '/' + dataset + '.pth.tar'
+        utils.download_from_config(
+            'config.ini', file_path, 'model_links', dataset)
     elif dataset == 'imagenet':
         model = torchvision.models.densenet161(pretrained=True)
         model_tools.save_model(model, path)
