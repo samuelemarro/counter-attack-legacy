@@ -165,9 +165,8 @@ def get_loaders(dataset, path, batch_size, num_workers, download):
 
 def download_pretrained_model(dataset, path):
     if dataset in ['cifar10', 'cifar100']:
-        file_path = path + '/' + dataset + '.pth.tar'
         utils.download_from_config(
-            'config.ini', file_path, 'model_links', dataset)
+            'config.ini', path, 'model_links', dataset)
     elif dataset == 'imagenet':
         model = torchvision.models.densenet161(pretrained=True)
         model_tools.save_model(model, path)
