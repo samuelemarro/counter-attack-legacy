@@ -1,6 +1,10 @@
+import logging
+
 import numpy as np
 import torch
 from . import utils
+
+logger = logging.getLogger(__name__)
 
 
 class StopCriterion:
@@ -17,7 +21,7 @@ class MaxEpoch(StopCriterion):
         return epoch <= self.max_epoch
 
 
-def train_torch(model, loader, loss_fn, optimizer, stop_criterion, use_cuda, verbose=True):
+def train_torch(model, loader, loss_fn, optimizer, stop_criterion, use_cuda):
     model.train()
 
     epoch = 0
@@ -68,16 +72,17 @@ def train_torch(model, loader, loss_fn, optimizer, stop_criterion, use_cuda, ver
 
             epoch += 1
 
-        if verbose:
-            print('\n=========')
-            if epoch == 0:
-                print('Pre-Epoch (Epoch 0)')
-            else:
-                print('Epoch {}'.format(epoch))
-            print('=========\n')
-            print('Average Loss: {:2.2e}'.format(average_loss.avg))
-            print('Top-1 Accuracy: {:2.2f}%'.format(top1_accuracy.avg * 100.0))
-            print('Top-5 Accuracy: {:2.2f}%'.format(top5_accuracy.avg * 100.0))
+        logger.info('\n=========')
+        if epoch == 0:
+            logger.info('Pre-Epoch (Epoch 0)')
+        else:
+            logger.info('Epoch {}'.format(epoch))
+        logger.info('=========\n')
+        logger.info('Average Loss: {:2.2e}'.format(average_loss.avg))
+        logger.info(
+            'Top-1 Accuracy: {:2.2f}%'.format(top1_accuracy.avg * 100.0))
+        logger.info(
+            'Top-5 Accuracy: {:2.2f}%'.format(top5_accuracy.avg * 100.0))
 
         proceed = stop_criterion.proceed(
             epoch, average_loss.avg, top1_accuracy.avg)

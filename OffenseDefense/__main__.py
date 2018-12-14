@@ -41,6 +41,8 @@ supported_detectors = supported_distance_tools
 
 supported_ps = ['2', 'inf']
 
+logger = logging.getLogger('OffenseDefense')
+
 
 def cifar_loader(dataset, path, train, download, batch_size, num_workers):
     if dataset == 'cifar10':
@@ -81,7 +83,7 @@ def download_imagenet(path):
     os.remove(train_file_path)
 
     for file_name in os.listdir(train_path):
-        print(file_name)
+        logger.debug(file_name)
         # Skip files that are not tar files
         if not file_name.endswith('.tar'):
             continue
@@ -348,11 +350,11 @@ def global_options(func):
                   help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
     @click.option('-dd', '--download-dataset', is_flag=True,
                   help='If the dataset files do not exist, download them (not supported for ImageNet).')
-    @click.option('-v', '--verbose', is_flag=True,
-                  help='Enables verbose output.')
+    @click.option('-v', '--verbosity', default='info', show_default=True, type=click.Choice(['debug','info','warning','error','critical']),
+                  help='Sets the level of verbosity.')
     @click.pass_context
     @functools.wraps(func)
-    def _parse_global_options(ctx, dataset, data_folder, model_path, results_path, batch, max_batches, loader_workers, download_model, download_dataset, verbose, *args, **kwargs):
+    def _parse_global_options(ctx, dataset, data_folder, model_path, results_path, batch, max_batches, loader_workers, download_model, download_dataset, verbosity, *args, **kwargs):
         if data_folder is None:
             data_folder = './data/genuine/' + dataset
 
@@ -381,6 +383,9 @@ def global_options(func):
         foolbox_model = foolbox.models.PyTorchModel(
             pytorch_model, (0, 1), num_classes, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0, 1))
 
+        logging.basicConfig()
+        logger.setLevel(verbosity.upper())
+
         parsed_global_options = {
             'command': command,
             'dataset': dataset,
@@ -388,8 +393,7 @@ def global_options(func):
             'train_loader': train_loader,
             'test_loader': test_loader,
             'pytorch_model': pytorch_model,
-            'results_path': results_path,
-            'verbose': verbose
+            'results_path': results_path
         }
 
         return func(parsed_global_options, *args, **kwargs)
@@ -550,7 +554,7 @@ def main(*args):
 @attack_options(supported_attacks)
 def attack(options):
     """
-    Runs ATTACK against the model trained on DATASET.
+    Runs an attack against the model.
 
     Stores the following results:
         Success Rate: The success rate of the attack.
@@ -567,14 +571,13 @@ def attack(options):
     test_loader = options['test_loader']
     p = options['p']
     results_path = options['results_path']
-    verbose = options['verbose']
 
     attack_constructor = get_attack_constructor(attack_name, p)
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     distances, failure_count = tests.attack_test(foolbox_model, test_loader, attack, p,
-                                                 batch_worker, attack_workers, verbose)
+                                                 batch_worker, attack_workers)
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -596,7 +599,7 @@ def attack(options):
               help='The two top-k accuracies that will be computed.')
 def accuracy(options, top_ks):
     """
-    Computes the accuracy of the model on DATASET.
+    Computes the accuracy of the model.
 
     Stores the following results:
         Top-K Accuracies: The accuracies, where k values are configurable with --top-ks.
@@ -606,10 +609,9 @@ def accuracy(options, top_ks):
     foolbox_model = options['foolbox_model']
     test_loader = options['test_loader']
     results_path = options['results_path']
-    verbose = options['verbose']
 
     accuracies = tests.accuracy_test(
-        foolbox_model, test_loader, top_ks, verbose)
+        foolbox_model, test_loader, top_ks)
     accuracies = ['{:2.2f}%'.format(accuracy * 100.0)
                   for accuracy in accuracies]
 
@@ -629,14 +631,13 @@ def detect(options):
     test_loader = options['test_loader']
     p = options['p']
     results_path = options['results_path']
-    verbose = options['verbose']
 
     attack_constructor = get_attack_constructor(attack_name, p)
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     genuine_scores, adversarial_scores, success_rate = tests.standard_detector_test(
-        foolbox_model, test_loader, attack, detector, batch_worker, attack_workers, verbose)
+        foolbox_model, test_loader, attack, detector, batch_worker, attack_workers)
 
     false_positive_rates, true_positive_rates, thresholds = utils.roc_curve(
         genuine_scores, adversarial_scores)
@@ -675,11 +676,10 @@ def distance(options, distance_tool):
     foolbox_model = options['foolbox_model']
     results_path = options['results_path']
     test_loader = options['test_loader']
-    verbose = options['verbose']
     distance_tool = get_distance_tool(distance_tool, options)
 
     distances, failure_count = tests.distance_test(
-        foolbox_model, distance_tool, test_loader, verbose)
+        foolbox_model, distance_tool, test_loader)
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -708,7 +708,6 @@ def black_box_evasion(options):
     results_path = options['results_path']
     test_loader = options['test_loader']
     threshold = options['threshold']
-    verbose = options['verbose']
 
     composite_model = detectors.CompositeDetectorModel(
         foolbox_model, detector, threshold)
@@ -718,7 +717,7 @@ def black_box_evasion(options):
         composite_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     distances, failure_count = tests.attack_test(composite_model, test_loader, attack,
-                                                 p, batch_worker, attack_workers, verbose)
+                                                 p, batch_worker, attack_workers, name='Black Box Evasion Test')
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -746,7 +745,6 @@ def differentiable_evasion(options):
     results_path = options['results_path']
     test_loader = options['test_loader']
     threshold = options['threshold']
-    verbose = options['verbose']
 
     # composite_model = detectors.CompositeDetectorModel(
     #    foolbox_model, detector, threshold)
@@ -756,7 +754,7 @@ def differentiable_evasion(options):
     #    composite_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     distances, failure_count = tests.attack_test(composite_model, test_loader, attack,
-                                                 p, batch_worker, attack_workers, verbose)
+                                                 p, batch_worker, attack_workers, name='Differentiable Evasion Test')
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -783,14 +781,13 @@ def parallelization(options):
     p = options['p']
     results_path = options['results_path']
     test_loader = options['test_loader']
-    verbose = options['verbose']
 
     attack_constructor = get_attack_constructor(attack_name, p)
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     standard_distances, standard_failure_count, parallel_distances, parallel_failure_count = tests.parallelization_test(
-        foolbox_model, test_loader, attack, p, batch_worker, attack_workers, verbose)
+        foolbox_model, test_loader, attack, p, batch_worker, attack_workers)
 
     standard_average_distance, standard_median_distance, standard_success_rate, standard_adjusted_median_distance = utils.distance_statistics(
         standard_distances, standard_failure_count)

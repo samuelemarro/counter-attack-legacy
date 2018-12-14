@@ -10,6 +10,9 @@ class Loader:
     def __next__(self):
         raise NotImplementedError()
 
+    def __len__(self):
+        raise NotImplementedError()
+
 
 class TorchLoader(Loader):
     def __init__(self, torch_loader):
@@ -30,6 +33,9 @@ class TorchLoader(Loader):
             return images, labels
         except StopIteration:
             raise
+
+    def __len__(self):
+        return len(self.torch_loader)
 
 
 class AdversarialLoader(Loader):
@@ -84,6 +90,9 @@ class AdversarialLoader(Loader):
 
         return adversarials, output_labels
 
+    def __len__(self):
+        return len(self.loader)
+
 
 class RandomNoiseLoader:
     def __init__(self, foolbox_model, output_min, output_max, output_shape, batch_size, batch_count):
@@ -112,6 +121,9 @@ class RandomNoiseLoader:
 
         return samples, labels
 
+    def __len__(self):
+        return self.batch_count
+
 
 class MaxBatchLoader:
     def __init__(self, loader, max_batches):
@@ -132,3 +144,6 @@ class MaxBatchLoader:
         self._batch_counter += 1
 
         return next(self._loader_iterator)
+
+    def __len__(self):
+        return self.max_batches

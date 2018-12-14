@@ -78,9 +78,7 @@ class CompositeDetectorModel(foolbox.models.Model):
             assert np.all(batch_classifier_predictions > self.undetected_value)
             valid_outputs = np.insert(batch_classifier_predictions,
                                       batch_classifier_predictions.shape[1], self.undetected_value, axis=1)
-            # print(outputs)
-            # print(valid_indices)
-            # print(valid_outputs)
+
             outputs[valid_indices] = valid_outputs
 
         return outputs

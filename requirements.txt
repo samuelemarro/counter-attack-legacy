@@ -6,3 +6,4 @@ scikit_learn>=0.20.0
 matplotlib>=2.0.2
 randomgen>=1.15.1
 click>=7.0
+progress>=1.4
