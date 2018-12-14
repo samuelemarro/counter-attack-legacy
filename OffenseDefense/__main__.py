@@ -7,7 +7,6 @@ import queue
 import shutil
 import sys
 import tarfile
-import warnings
 
 import foolbox
 import matplotlib.pyplot as plt
@@ -329,6 +328,8 @@ def add_options(options):
 
 def global_options(func):
     @click.argument('dataset', type=click.Choice(['cifar10', 'cifar100', 'imagenet']))
+    @click.option('-dt', '--dataset-type', default='test', show_default=True, type=click.Choice(['train', 'test']),
+                  help='Sets the dataset (train or test) that will be used.')
     @click.option('-df', '--data-folder', default=None, type=click.Path(file_okay=False, dir_okay=True),
                   help='The path to the folder where the dataset is stored (or will be downloaded). '
                   'If unspecified, it defaults to \'./data/genuine/$dataset$\'.')
@@ -354,7 +355,7 @@ def global_options(func):
                   help='Sets the level of verbosity.')
     @click.pass_context
     @functools.wraps(func)
-    def _parse_global_options(ctx, dataset, data_folder, model_path, results_path, batch, max_batches, loader_workers, download_model, download_dataset, verbosity, *args, **kwargs):
+    def _parse_global_options(ctx, dataset, dataset_type, data_folder, model_path, results_path, batch, max_batches, loader_workers, download_model, download_dataset, verbosity, *args, **kwargs):
         if data_folder is None:
             data_folder = './data/genuine/' + dataset
 
@@ -369,9 +370,13 @@ def global_options(func):
         train_loader, test_loader = get_loaders(
             dataset, data_folder, batch, loader_workers, download_dataset)
 
+        if dataset_type == 'train':
+            loader = train_loader
+        else:
+            loader = test_loader
+
         if max_batches > 0:
-            train_loader = loaders.MaxBatchLoader(train_loader, max_batches)
-            test_loader = loaders.MaxBatchLoader(test_loader, max_batches)
+            loader = loaders.MaxBatchLoader(loader, max_batches)
 
         pytorch_model = get_pytorch_model(dataset, model_path, download_model)
         pytorch_model = torch.nn.Sequential(
@@ -389,9 +394,9 @@ def global_options(func):
         parsed_global_options = {
             'command': command,
             'dataset': dataset,
+            'dataset_type' : dataset_type,
             'foolbox_model': foolbox_model,
-            'train_loader': train_loader,
-            'test_loader': test_loader,
+            'loader': loader,
             'pytorch_model': pytorch_model,
             'results_path': results_path
         }
@@ -421,8 +426,7 @@ def attack_options(attacks):
         def _parse_attack_options(parsed_global_options, attack, p, attack_workers, loader_type, loader_attack, loader_attack_p, no_attack_parallelization, *args, **kwargs):
             foolbox_model = parsed_global_options['foolbox_model']
             pytorch_model = parsed_global_options['pytorch_model']
-            test_loader = parsed_global_options['test_loader']
-            train_loader = parsed_global_options['train_loader']
+            loader = parsed_global_options['loader']
 
             if p == '2':
                 p = 2
@@ -446,15 +450,11 @@ def attack_options(attacks):
                     foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(loader_attack_p))
 
                 if parallelize_loader_attack:
-                    train_loader = loaders.AdversarialLoader(
-                        train_loader, foolbox_model, loader_attack, True, batch_worker, attack_workers)
-                    test_loader = loaders.AdversarialLoader(
-                        test_loader, foolbox_model, loader_attack, True, batch_worker, attack_workers)
+                    loader = loaders.AdversarialLoader(
+                        loader, foolbox_model, loader_attack, True, batch_worker, attack_workers)
                 else:
-                    train_loader = loaders.AdversarialLoader(
-                        train_loader, foolbox_model, loader_attack, True)
-                    test_loader = loaders.AdversarialLoader(
-                        test_loader, foolbox_model, loader_attack, True)
+                    loader = loaders.AdversarialLoader(
+                        loader, foolbox_model, loader_attack, True)
 
             parsed_attack_options = dict(parsed_global_options)
 
@@ -467,8 +467,7 @@ def attack_options(attacks):
             parsed_attack_options['loader_attack'] = loader_attack
             parsed_attack_options['p'] = p
             parsed_attack_options['parallelize_attack'] = parallelize_attack
-            parsed_attack_options['test_loader'] = test_loader
-            parsed_attack_options['train_loader'] = train_loader
+            parsed_attack_options['loader'] = loader
 
             return func(parsed_attack_options, *args, **kwargs)
         return _parse_attack_options
@@ -568,7 +567,7 @@ def attack(options):
     attack_workers = options['attack_workers']
     batch_worker = options['batch_worker']
     foolbox_model = options['foolbox_model']
-    test_loader = options['test_loader']
+    loader = options['loader']
     p = options['p']
     results_path = options['results_path']
 
@@ -576,7 +575,7 @@ def attack(options):
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
-    distances, failure_count = tests.attack_test(foolbox_model, test_loader, attack, p,
+    distances, failure_count = tests.attack_test(foolbox_model, loader, attack, p,
                                                  batch_worker, attack_workers)
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
@@ -607,11 +606,11 @@ def accuracy(options, top_ks):
 
     command = options['command']
     foolbox_model = options['foolbox_model']
-    test_loader = options['test_loader']
+    loader = options['loader']
     results_path = options['results_path']
 
     accuracies = tests.accuracy_test(
-        foolbox_model, test_loader, top_ks)
+        foolbox_model, loader, top_ks)
     accuracies = ['{:2.2f}%'.format(accuracy * 100.0)
                   for accuracy in accuracies]
 
@@ -621,23 +620,31 @@ def accuracy(options, top_ks):
 
 @main.command()
 @detector_options(supported_attacks)
-def detect(options):
+@click.option('--no-detector-warning', '-ndw', is_flag=True,
+              help='Disables the warning for running this test on the test set.')
+def detect(options, no_detector_warning):
     command = options['command']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     batch_worker = options['batch_worker']
+    dataset_type = options['dataset_type']
     detector = options['detector']
     foolbox_model = options['foolbox_model']
-    test_loader = options['test_loader']
+    loader = options['loader']
     p = options['p']
     results_path = options['results_path']
+
+    if dataset_type == 'test' and not no_detector_warning:
+        logger.warning('Remember to use \'-dt train\' if you plan to use the results '
+                'to pick a threshold for other tests. You can disable this warning by passing '
+                '\'--no-detector-warning\' (alias: \'-ndw\').')
 
     attack_constructor = get_attack_constructor(attack_name, p)
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     genuine_scores, adversarial_scores, success_rate = tests.standard_detector_test(
-        foolbox_model, test_loader, attack, detector, batch_worker, attack_workers)
+        foolbox_model, loader, attack, detector, batch_worker, attack_workers)
 
     false_positive_rates, true_positive_rates, thresholds = utils.roc_curve(
         genuine_scores, adversarial_scores)
@@ -675,11 +682,11 @@ def distance(options, distance_tool):
     command = options['command']
     foolbox_model = options['foolbox_model']
     results_path = options['results_path']
-    test_loader = options['test_loader']
+    loader = options['loader']
     distance_tool = get_distance_tool(distance_tool, options)
 
     distances, failure_count = tests.distance_test(
-        foolbox_model, distance_tool, test_loader)
+        foolbox_model, distance_tool, loader)
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -706,7 +713,7 @@ def black_box_evasion(options):
     attack_workers = options['attack_workers']
     p = options['p']
     results_path = options['results_path']
-    test_loader = options['test_loader']
+    loader = options['loader']
     threshold = options['threshold']
 
     composite_model = detectors.CompositeDetectorModel(
@@ -716,7 +723,7 @@ def black_box_evasion(options):
     attack = attack_constructor(
         composite_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
-    distances, failure_count = tests.attack_test(composite_model, test_loader, attack,
+    distances, failure_count = tests.attack_test(composite_model, loader, attack,
                                                  p, batch_worker, attack_workers, name='Black Box Evasion Test')
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
@@ -743,7 +750,7 @@ def differentiable_evasion(options):
     attack_workers = options['attack_workers']
     p = options['p']
     results_path = options['results_path']
-    test_loader = options['test_loader']
+    loader = options['loader']
     threshold = options['threshold']
 
     # composite_model = detectors.CompositeDetectorModel(
@@ -753,7 +760,8 @@ def differentiable_evasion(options):
     # attack = attack_constructor(
     #    composite_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
-    distances, failure_count = tests.attack_test(composite_model, test_loader, attack,
+    composite_model = None
+    distances, failure_count = tests.attack_test(composite_model, loader, attack,
                                                  p, batch_worker, attack_workers, name='Differentiable Evasion Test')
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
@@ -780,14 +788,14 @@ def parallelization(options):
     foolbox_model = options['foolbox_model']
     p = options['p']
     results_path = options['results_path']
-    test_loader = options['test_loader']
+    loader = options['loader']
 
     attack_constructor = get_attack_constructor(attack_name, p)
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     standard_distances, standard_failure_count, parallel_distances, parallel_failure_count = tests.parallelization_test(
-        foolbox_model, test_loader, attack, p, batch_worker, attack_workers)
+        foolbox_model, loader, attack, p, batch_worker, attack_workers)
 
     standard_average_distance, standard_median_distance, standard_success_rate, standard_adjusted_median_distance = utils.distance_statistics(
         standard_distances, standard_failure_count)

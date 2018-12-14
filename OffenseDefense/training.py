@@ -72,16 +72,16 @@ def train_torch(model, loader, loss_fn, optimizer, stop_criterion, use_cuda):
 
             epoch += 1
 
-        logger.info('\n=========')
+        logger.debug('\n=========')
         if epoch == 0:
-            logger.info('Pre-Epoch (Epoch 0)')
+            logger.debug('Pre-Epoch (Epoch 0)')
         else:
-            logger.info('Epoch {}'.format(epoch))
-        logger.info('=========\n')
-        logger.info('Average Loss: {:2.2e}'.format(average_loss.avg))
-        logger.info(
+            logger.debug('Epoch {}'.format(epoch))
+        logger.debug('=========\n')
+        logger.debug('Average Loss: {:2.2e}'.format(average_loss.avg))
+        logger.debug(
             'Top-1 Accuracy: {:2.2f}%'.format(top1_accuracy.avg * 100.0))
-        logger.info(
+        logger.debug(
             'Top-5 Accuracy: {:2.2f}%'.format(top5_accuracy.avg * 100.0))
 
         proceed = stop_criterion.proceed(

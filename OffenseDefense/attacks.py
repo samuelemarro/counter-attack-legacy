@@ -160,7 +160,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
 
             # The first samples to cross the boundary are the potential candidates, so we drop the rest
             if len(successful_adversarials) > 0:
-                logger.info('Found {} successful adversarials with search magnitude {}'.format(
+                logger.debug('Found {} successful adversarials with search magnitude {}'.format(
                     len(successful_adversarials), search_magnitude))
                 vectors = successful_vectors
                 break
@@ -168,7 +168,6 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
             search_magnitude += self.search_epsilon
 
         if len(successful_adversarials) == 0:
-            logger.warning('Couldn\'t find an adversarial sample')
             return
 
         # Finetuning: Use binary search to find the distance with high precision
@@ -187,7 +186,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
             else:
                 max_ = finetuning_magnitude
 
-        logger.info('Finetuned from magnitude {} to {}'.format(
+        logger.debug('Finetuned from magnitude {} to {}'.format(
             search_magnitude, finetuning_magnitude))
 
     @foolbox.attacks.base.call_decorator

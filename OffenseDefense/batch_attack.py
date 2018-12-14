@@ -1,9 +1,12 @@
 import queue
-import warnings
+import logging
 import numpy as np
 import foolbox
 import torch
+
 from . import batch_processing, utils
+
+logger = logging.getLogger(__name__)
 
 
 class PyTorchWorker(batch_processing.BatchWorker):
@@ -192,7 +195,7 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
             _filter['adversarials'] = []
             _filter['adversarial_predictions'] = []
             _filter['adversarial_labels'] = []
-            warnings.warn('No samples were classified correctly.')
+            logger.warning('No samples were classified correctly.')
             return _filter
 
     else:
@@ -222,7 +225,7 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
             _filter['adversarials'] = []
             _filter['adversarial_predictions'] = []
             _filter['adversarial_labels'] = []
-            warnings.warn(
+            logger.warning(
                 'Could not find an adversarial sample for any of the provided samples.')
             return _filter
 
