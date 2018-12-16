@@ -212,10 +212,6 @@ def save_csv(path, table, info=None, header=None, delimiter='\t'):
             wr.writerow(row)
 
 
-def get_results_default_path(test_name):
-    return './results/{}/{:%Y-%m-%d %H-%M-%S}.csv'.format(test_name, datetime.datetime.now())
-
-
 def download(url, path):
     r = urllib.request.urlopen(url)
     content = r.read()

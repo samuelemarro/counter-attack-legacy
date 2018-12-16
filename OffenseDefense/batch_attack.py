@@ -9,22 +9,22 @@ from . import batch_processing, utils
 logger = logging.getLogger(__name__)
 
 
-class PyTorchWorker(batch_processing.BatchWorker):
-    """A BatchWorker that wraps a PyTorch model.
+class TorchWorker(batch_processing.BatchWorker):
+    """A BatchWorker that wraps a Torch model.
     """
 
     def __init__(self,
-                 pytorch_model: torch.nn.Module):
-        """Initializes the PytorchWorker.
+                 torch_model: torch.nn.Module):
+        """Initializes the TorchWorker.
 
         Parameters
         ----------
-        pytorch_model : torch.nn.Module
-            The PyTorch model that will be used to perform the predictions.
+        torch_model : torch.nn.Module
+            The Torch model that will be used to perform the predictions.
 
         """
 
-        self.pytorch_model = pytorch_model
+        self.torch_model = torch_model
 
     def __call__(self, inputs):
         images = [np.array(x[0]) for x in inputs]
@@ -36,11 +36,11 @@ class PyTorchWorker(batch_processing.BatchWorker):
         images.requires_grad_()
 
         # Convert to CUDA tensors, if available
-        if next(self.pytorch_model.parameters()).is_cuda:
+        if next(self.torch_model.parameters()).is_cuda:
             images = images.cuda()
             labels = labels.cuda()
 
-        outputs = self.pytorch_model(images)
+        outputs = self.torch_model(images)
 
         cross_entropy = torch.nn.CrossEntropyLoss()
 

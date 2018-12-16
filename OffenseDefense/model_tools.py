@@ -20,32 +20,6 @@ class Preprocessing(torch.nn.Module):
         return (input - means) / stds
 
 
-class AdversarialDataset(data.Dataset):
-    def __init__(self, path, transform=None, count_limit=None):
-        try:
-            self.dataset = utils.load_zip(path)
-            self.count_limit = None
-        except:
-            raise ValueError('Invalid path')
-
-        self.transform = transform
-
-    def __getitem__(self, index):
-        image, label, is_adversarial = self.dataset[index]
-        image = torch.from_numpy(image)
-        label = torch.FloatTensor([label])
-        is_adversarial = torch.FloatTensor([is_adversarial])
-        if self.transform is not None:
-            image = self.transform(image)
-
-        return image, label, is_adversarial
-
-    def __len__(self):
-        if self.count_limit is None:
-            return len(self.dataset)
-        return self.count_limit
-
-
 def load_model(base_model, path, training_model, data_parallel):
     if data_parallel:
         model = torch.nn.DataParallel(base_model)

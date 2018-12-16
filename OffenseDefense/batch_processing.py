@@ -104,12 +104,10 @@ def _parallel_thread_function(pooler, thread_worker, output_queue):
     pooler.deregister()
 
 
-"""
-Manages threading and queuing for batch and thread workers.
-"""
-
-
 def run_queue_threads(batch_worker, thread_workers, input_queue, data):
+    """
+    Manages threading and queuing for batch and thread workers.
+    """
     pooler = BatchPooler(batch_worker)
     threads = []
 

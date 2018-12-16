@@ -103,4 +103,4 @@ def train_detector(model, detector, failure_value, loader, optimizer, stop_crite
         return loss
 
     train_torch(model, loader, loss_fn, optimizer,
-                stop_criterion, use_cuda, verbose)
+                stop_criterion, use_cuda)
