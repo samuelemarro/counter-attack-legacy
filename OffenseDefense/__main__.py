@@ -1,13 +1,18 @@
 import logging
 
-import foolbox
-import sklearn
 import click
+import foolbox
+import numpy as np
+import sklearn
+import torch
 
 import OffenseDefense
 import OffenseDefense.attacks as attacks
+import OffenseDefense.batch_attack as batch_attack
 import OffenseDefense.detectors as detectors
 import OffenseDefense.distance_tools as distance_tools
+import OffenseDefense.loaders as loaders
+import OffenseDefense.model_tools as model_tools
 import OffenseDefense.parsing as parsing
 import OffenseDefense.tests as tests
 import OffenseDefense.training as training
@@ -22,11 +27,16 @@ def main(*args):
 
 
 @main.command()
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.test_options('attack')
+@parsing.parallelization_options
 @parsing.attack_options(parsing.supported_attacks)
 def attack(options):
     """
     Runs an attack against the model.
 
+    \b
     Stores the following results:
         Success Rate: The success rate of the attack.
         Average Distance: The average L_p distance of the successful adversarial samples from their original samples.
@@ -37,18 +47,19 @@ def attack(options):
     command = options['command']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
-    batch_worker = options['batch_worker']
+    model_batch_worker = options['model_batch_worker']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     p = options['p']
     results_path = options['results_path']
+    torch_model = options['torch_model']
 
     attack_constructor = parsing.parse_attack_constructor(attack_name, p)
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     distances, failure_count = tests.attack_test(foolbox_model, loader, attack, p,
-                                                 batch_worker, attack_workers)
+                                                 model_batch_worker, attack_workers)
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -60,18 +71,21 @@ def attack(options):
 
     header = ['Distances']
 
-    utils.save_results(results_path, [distances], command,
+    utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header, transpose=True)
 
 
 @main.command()
 @parsing.global_options
-@click.option('-tk', '--top-ks', nargs=2, type=int, default=(1, 5), show_default=True,
+@parsing.pretrained_model_options
+@parsing.test_options('accuracy')
+@click.option('-tk', '--top-ks', nargs=2, type=click.Tuple([int, int]), default=(1, 5), show_default=True,
               help='The two top-k accuracies that will be computed.')
 def accuracy(options, top_ks):
     """
     Computes the accuracy of the model.
 
+    \b
     Stores the following results:
         Top-K Accuracies: The accuracies, where k values are configurable with --top-ks.
     """
@@ -80,18 +94,24 @@ def accuracy(options, top_ks):
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
+    torch_model = options['torch_model']
 
     accuracies = tests.accuracy_test(
         foolbox_model, loader, top_ks)
-    accuracies = ['{:2.2f}%'.format(accuracy * 100.0)
-                  for accuracy in accuracies]
 
-    header = ['Top-{}'.format(top_k) for top_k in top_ks]
-    utils.save_results(results_path, [accuracies], command, header=header)
+    info = [['Top-{} Accuracy:'.format(top_k), accuracy]
+            for top_k, accuracy in zip(top_ks, accuracies)]
+    utils.save_results(results_path, command=command, info=info)
 
 
 @main.command()
-@parsing.detector_options(parsing.supported_attacks)
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.test_options('detect')
+@parsing.parallelization_options
+@parsing.attack_options(parsing.supported_attacks)
+@parsing.distance_options
+@parsing.detector_options(-np.Infinity)
 @click.option('--no-detector-warning', '-ndw', is_flag=True,
               help='Disables the warning for running this test on the test set.')
 def detect(options, no_detector_warning):
@@ -102,13 +122,14 @@ def detect(options, no_detector_warning):
     command = options['command']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
-    batch_worker = options['batch_worker']
+    model_batch_worker = options['model_batch_worker']
     dataset_type = options['dataset_type']
     detector = options['detector']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     p = options['p']
     results_path = options['results_path']
+    torch_model = options['torch_model']
 
     if dataset_type == 'test' and not no_detector_warning:
         logger.warning('Remember to use \'-dt train\' if you plan to use the results '
@@ -120,7 +141,7 @@ def detect(options, no_detector_warning):
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     genuine_scores, adversarial_scores, success_rate = tests.standard_detector_test(
-        foolbox_model, loader, attack, detector, batch_worker, attack_workers)
+        foolbox_model, loader, attack, detector, model_batch_worker, attack_workers)
 
     false_positive_rates, true_positive_rates, thresholds = utils.roc_curve(
         genuine_scores, adversarial_scores)
@@ -147,12 +168,16 @@ def detect(options, no_detector_warning):
     columns = [genuine_scores, adversarial_scores,
                thresholds, true_positive_rates, false_positive_rates]
 
-    utils.save_results(results_path, columns, command,
+    utils.save_results(results_path, table=columns, command=command,
                        info=info, header=header, transpose=True)
 
 
 @main.command()
-@parsing.distance_options(parsing.supported_attacks)
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.test_options('distance')
+@parsing.parallelization_options
+@parsing.distance_options
 @click.argument('distance-tool', type=click.Choice(parsing.supported_detectors))
 def distance(options, distance_tool):
     """
@@ -160,10 +185,12 @@ def distance(options, distance_tool):
     """
 
     command = options['command']
+    loader = options['loader']
     foolbox_model = options['foolbox_model']
     results_path = options['results_path']
-    loader = options['loader']
-    distance_tool = parsing.parse_distance_tool(distance_tool, options)
+    torch_model = options['torch_model']
+    distance_tool = parsing.parse_distance_tool(
+        distance_tool, options, -np.Infinity)
 
     distances, failure_count = tests.distance_test(
         foolbox_model, distance_tool, loader)
@@ -178,19 +205,26 @@ def distance(options, distance_tool):
 
     header = ['Distances']
 
-    utils.save_results(results_path, [distances], command,
+    utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header, transpose=True)
 
 
 @main.command()
-@parsing.evasion_options(parsing.black_box_attacks)
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.test_options('black_box_evasion')
+@parsing.parallelization_options
+@parsing.attack_options(parsing.black_box_attacks)
+@parsing.distance_options
+@parsing.detector_options(-np.Infinity)
+@parsing.evasion_options
 def black_box_evasion(options):
     """
     Treats the model and the detector as a black box.
     """
 
     attack_name = options['attack_name']
-    batch_worker = options['batch_worker']
+    model_batch_worker = options['model_batch_worker']
     command = options['command']
     detector = options['detector']
     foolbox_model = options['foolbox_model']
@@ -199,6 +233,7 @@ def black_box_evasion(options):
     results_path = options['results_path']
     loader = options['loader']
     threshold = options['threshold']
+    torch_model = options['torch_model']
 
     composite_model = detectors.CompositeDetectorModel(
         foolbox_model, detector, threshold)
@@ -208,7 +243,7 @@ def black_box_evasion(options):
         composite_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     distances, failure_count = tests.attack_test(composite_model, loader, attack,
-                                                 p, batch_worker, attack_workers, name='Black Box Evasion Test')
+                                                 p, model_batch_worker, attack_workers, name='Black Box Evasion Test')
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -220,15 +255,22 @@ def black_box_evasion(options):
 
     header = ['Distances']
 
-    utils.save_results(results_path, [distances], command,
+    utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header, transpose=True)
 
 
 @main.command()
-@parsing.evasion_options(parsing.differentiable_attacks)
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.test_options('differentiable_evasion')
+@parsing.parallelization_options
+@parsing.attack_options(parsing.differentiable_attacks)
+@parsing.distance_options
+@parsing.detector_options(-np.Infinity)
+@parsing.evasion_options
 def differentiable_evasion(options):
     attack_name = options['attack_name']
-    batch_worker = options['batch_worker']
+    model_batch_worker = options['model_batch_worker']
     command = options['command']
     detector = options['detector']
     foolbox_model = options['foolbox_model']
@@ -237,17 +279,20 @@ def differentiable_evasion(options):
     results_path = options['results_path']
     loader = options['loader']
     threshold = options['threshold']
+    torch_model = options['torch_model']
 
     # composite_model = detectors.CompositeDetectorModel(
     #    foolbox_model, detector, threshold)
 
-    #attack_constructor = get_attack_constructor(attack_name, p)
+    # attack_constructor = get_attack_constructor(attack_name, p)
     # attack = attack_constructor(
     #    composite_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
+    #TODO: Complete
+
     composite_model = None
     distances, failure_count = tests.attack_test(composite_model, loader, attack,
-                                                 p, batch_worker, attack_workers, name='Differentiable Evasion Test')
+                                                 p, model_batch_worker, attack_workers, name='Differentiable Evasion Test')
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -259,32 +304,39 @@ def differentiable_evasion(options):
 
     header = ['Distances']
 
-    utils.save_results(results_path, [distances], command,
+    utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header, transpose=True)
 
 
 @main.command()
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.test_options('parallelization')
+@parsing.set_parameters({'enable_attack_parallelization': True})
 @parsing.attack_options(parsing.parallelizable_attacks)
-def parallelization(options):
+@click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
+              help='The number of parallel workers that will be used to speed up the attack.')
+def parallelization(options, attack_workers):
     """
     Compares parallelized attacks with standard ones.
     """
 
     attack_name = options['attack_name']
-    attack_workers = options['attack_workers']
-    batch_worker = options['batch_worker']
     command = options['command']
     foolbox_model = options['foolbox_model']
     p = options['p']
     results_path = options['results_path']
     loader = options['loader']
+    torch_model = options['torch_model']
+
+    model_batch_worker = batch_attack.TorchWorker(torch_model)
 
     attack_constructor = parsing.parse_attack_constructor(attack_name, p)
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     standard_distances, standard_failure_count, parallel_distances, parallel_failure_count = tests.parallelization_test(
-        foolbox_model, loader, attack, p, batch_worker, attack_workers)
+        foolbox_model, loader, attack, p, model_batch_worker, attack_workers)
 
     standard_average_distance, standard_median_distance, standard_success_rate, standard_adjusted_median_distance = utils.distance_statistics(
         standard_distances, standard_failure_count)
@@ -307,20 +359,79 @@ def parallelization(options):
 
     header = ['Standard Distances', 'Parallel Distances']
 
-    utils.save_results(results_path, [standard_distances, parallel_distances], command,
+    utils.save_results(results_path, table=[standard_distances, parallel_distances], command=command,
                        info=info, header=header, transpose=True)
 
 
-@main.command
+@main.command()
 @parsing.global_options
-def train_model(options):
+@parsing.train_options
+@click.option('-tmp', '--trained-model-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
+              help='The path to the file where the model will be saved. If unspecified, it defaults to \'./train_model/$dataset$ $start_time$.pth.tar\'')
+def train_model(options, trained_model_path):
     command = options['command']
-    foolbox_model = options['foolbox_model']
+    cuda = options['cuda']
+    dataset = options['dataset']
+    epochs = options['epochs']
     loader = options['loader']
-    torch_model = options['torch_model']
-    results_path = options['results_path']
+    optimizer = options['optimizer']
+    start_time = options['start_time']
 
-    training.train_torch(torch_model, loader)
+    if trained_model_path is None:
+        trained_model_path = parsing.get_training_default_path(
+            'train_model', dataset, start_time)
+
+    torch_model = parsing._get_torch_model(dataset)
+    torch_model.train()
+
+    loss = torch.nn.CrossEntropyLoss()
+
+    training.train_torch(torch_model, loader, loss,
+                         optimizer, epochs, cuda, classification=True)
+
+    model_tools.save_model(torch_model, trained_model_path)
+
+
+@main.command()
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.parallelization_options
+@parsing.train_options
+@parsing.distance_options
+@parsing.detector_options(None)
+@click.option('-l', '--loss', type=click.Choice(['l1', 'l2', 'smooth_l1']), default='l2', show_default=True)
+@click.option('-tap', '--trained-approximator-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
+              help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./train_approximator/$dataset$ $start_time$.pth.tar\'')
+def train_approximator(options, loss, trained_approximator_path):
+    command = options['command']
+    cuda = options['cuda']
+    dataset = options['dataset']
+    detector = options['detector']
+    epochs = options['epochs']
+    loader = options['loader']
+    optimizer = options['optimizer']
+    start_time = options['start_time']
+    torch_model = options['torch_model']
+
+    if trained_approximator_path is None:
+        trained_approximator_path = parsing.get_training_default_path(
+            'train_approximator', dataset, start_time)
+
+    if loss == 'l1':
+        loss = torch.nn.L1Loss()
+    elif loss == 'l2':
+        loss = torch.nn.MSELoss()
+    elif loss == 'smooth_l1':
+        loss = torch.nn.SmoothL1Loss()
+    else:
+        raise ValueError('Loss not supported.')
+
+    loader = loaders.DetectorLoader(loader, detector, None)
+
+    training.train_torch(torch_model, loader, loss,
+                         optimizer, epochs, cuda, classification=False)
+
+    model_tools.save_model(torch_model, trained_approximator_path)
 
 
 if __name__ == '__main__':

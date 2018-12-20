@@ -1,3 +1,5 @@
+import pathlib
+
 import torch
 import torch.utils.data as data
 import torchvision
@@ -40,4 +42,5 @@ def load_model(base_model, path, training_model, data_parallel):
 
 
 def save_model(model, path):
+    pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), path)

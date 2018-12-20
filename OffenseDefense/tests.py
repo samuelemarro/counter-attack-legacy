@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_iterator(name, loader):
-    if logger.getEffectiveLevel() >= logging.INFO:
+    if logger.getEffectiveLevel() == logging.INFO:
         return IncrementalBar(name).iter(loader)
     else:
         return loader

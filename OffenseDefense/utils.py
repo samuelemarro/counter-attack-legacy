@@ -177,24 +177,25 @@ def distance_statistics(distances: np.ndarray, failure_count: int) -> Tuple[floa
     return average_distance, median_distance, success_rate, adjusted_median_distance
 
 
-def save_results(path, table, command, info=None, header=None, delimiter='\t', transpose=False):
+def save_results(path, table=None, command=None, info=None, header=None, delimiter='\t', transpose=False):
     # Add the command used to the info
-    if info is None:
-        info = [['Command:'] + [command]]
-    else:
-        info = [['Command:'] + [command]] + info
+    if command is not None:
+        if info is None:
+            info = [['Command:'] + [command]]
+        else:
+            info = [['Command:'] + [command]] + info
 
     # Add an empty row
     info += []
 
     # Transpose the table
-    if transpose:
+    if transpose and table is not None:
         table = itertools.zip_longest(*table, fillvalue='')
 
-    save_csv(path, table, info=info, header=header, delimiter=delimiter)
+    save_csv(path, table=table, info=info, header=header, delimiter=delimiter)
 
 
-def save_csv(path, table, info=None, header=None, delimiter='\t'):
+def save_csv(path, table=None, info=None, header=None, delimiter='\t'):
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, 'w', newline='') as file:
         wr = csv.writer(file, delimiter=delimiter, quoting=csv.QUOTE_MINIMAL)
@@ -206,10 +207,11 @@ def save_csv(path, table, info=None, header=None, delimiter='\t'):
         if header is not None:
             wr.writerow(header)
 
-        for row in table:
-            if not isinstance(row, collections.Iterable):
-                row = [row]
-            wr.writerow(row)
+        if table is not None:
+            for row in table:
+                if not isinstance(row, collections.Iterable):
+                    row = [row]
+                wr.writerow(row)
 
 
 def download(url, path):
@@ -226,9 +228,9 @@ def download_from_config(config_path, download_path, link_section, link_name):
         download_link = config.get(link_section, link_name)
     except KeyError:
         raise IOError(
-            'config.ini does not contain the link for \'{}\''.format(link_name))
+            'The configuration file does not contain the link for \'{}\''.format(link_name))
     except IOError:
-        raise IOError('Could not read config.ini')
+        raise IOError('Could not read the configuration file.')
     try:
         print('Downloading from {}'.format(download_link))
         download(download_link, download_path)

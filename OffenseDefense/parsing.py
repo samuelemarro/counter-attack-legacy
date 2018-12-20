@@ -13,7 +13,7 @@ import tarfile
 import torch
 import torchvision
 
-from . import batch_attack, cifar_models, detectors, distance_tools, loaders, model_tools, utils
+from . import batch_attack, cifar_models, detectors, distance_tools, loaders, model_tools, training, utils
 
 
 datasets = ['cifar10', 'cifar100', 'imagenet']
@@ -32,8 +32,12 @@ supported_ps = ['2', 'inf']
 logger = logging.getLogger(__name__)
 
 
-def _get_results_default_path(test_name):
-    return './results/{}/{:%Y-%m-%d %H-%M-%S}.csv'.format(test_name, datetime.datetime.now())
+def _get_results_default_path(test_name, dataset, start_time):
+    return './results/{}/{} {:%Y-%m-%d %H-%M-%S}.csv'.format(test_name, dataset, start_time)
+
+
+def get_training_default_path(training_name, dataset, start_time):
+    return './trained_models/{}/{} {:%Y-%m-%d %H-%M-%S}.pth.tar'.format(training_name, dataset, start_time)
 
 
 def _cifar_loader(dataset, path, train, download, batch_size, num_workers):
@@ -59,7 +63,7 @@ def _cifar_loader(dataset, path, train, download, batch_size, num_workers):
                                        num_workers=num_workers)
 
 
-def _download_imagenet(path):
+def _download_imagenet(path, config_path):
     path = pathlib.Path(path)
     path.mkdir(parents=True, exist_ok=True)
 
@@ -70,7 +74,7 @@ def _download_imagenet(path):
 
     train_path.mkdir(parents=True, exist_ok=True)
     utils.download_from_config(
-        'config.ini', train_file_path, 'dataset_links', 'imagenet_train')
+        config_path, train_file_path, 'dataset_links', 'imagenet_train')
     tarfile.open(train_file_path).extractall(train_path)
     os.remove(train_file_path)
 
@@ -83,7 +87,7 @@ def _download_imagenet(path):
         class_file_path = train_path / file_name
         class_path = train_path / file_name[:-4]
 
-        #Create /aaaaa
+        # Create /aaaaa
         os.mkdir(class_path)
         # Extract aaaaa.tar in /aaaaa
         tarfile.open(class_file_path).extractall(class_path)
@@ -92,7 +96,7 @@ def _download_imagenet(path):
 
     val_path.mkdir(parents=True, exist_ok=True)
     utils.download_from_config(
-        'config.ini', val_file_path, 'dataset_links', 'imagenet_val')
+        config_path, val_file_path, 'dataset_links', 'imagenet_val')
     tarfile.open(val_file_path).extractall(val_path)
     os.remove(val_file_path)
 
@@ -107,10 +111,10 @@ def _download_imagenet(path):
         shutil.move(val_path / file_name, val_file_path / label)
 
 
-def _imagenet_loader(path, train, download, batch_size, num_workers):
+def _imagenet_loader(path, train, download, batch_size, num_workers, config_path):
     if not pathlib.Path(path).exists():
         if download:
-            _download_imagenet(path)
+            _download_imagenet(path, config_path)
         else:
             raise RuntimeError(
                 'Dataset files not found. Use --download-dataset to automatically download missing files.')
@@ -136,7 +140,7 @@ def _imagenet_loader(path, train, download, batch_size, num_workers):
     return loader
 
 
-def _get_loaders(dataset, path, batch_size, num_workers, download):
+def _get_genuine_loaders(dataset, path, batch_size, num_workers, download, config_path):
     if dataset in ['cifar10', 'cifar100']:
         train_loader = _cifar_loader(
             dataset, path, True, download, batch_size, num_workers)
@@ -145,9 +149,9 @@ def _get_loaders(dataset, path, batch_size, num_workers, download):
 
     elif dataset == 'imagenet':
         train_loader = _imagenet_loader(
-            path, True, download, batch_size, num_workers)
+            path, True, download, batch_size, num_workers, config_path)
         test_loader = _imagenet_loader(
-            path, False, download, batch_size, num_workers)
+            path, False, download, batch_size, num_workers, config_path)
     else:
         raise ValueError('Dataset not supported.')
 
@@ -168,7 +172,42 @@ def _download_pretrained_model(dataset, path):
         raise ValueError('Dataset not supported.')
 
 
-def _get_torch_model(dataset: str, path: str, download: bool) -> torch.nn.Module:
+def _get_torch_model(dataset: str) -> torch.nn.Module:
+    """Returns the pretrained Torch model for a given dataset.
+
+    Parameters
+    ----------
+    dataset : str
+        The name of the dataset. Currently supported values
+        are ['cifar10', 'cifar100', 'imagenet']
+
+    Raises
+    ------
+    ValueError
+        If the dataset is not supported.
+
+    Returns
+    -------
+    torch.nn.Module
+        The pretrained Torch model for the given dataset.
+    """
+
+    # Use the models that have shown the best top-1 accuracy
+    if dataset in ['cifar10', 'cifar100']:
+        # For CIFAR10(0), we use a DenseNet with depth 190 and growth rate 40
+        num_classes = 10 if dataset == 'cifar10' else 100
+        model = cifar_models.densenet(
+            depth=190, growthRate=40, num_classes=num_classes)
+    elif dataset == 'imagenet':
+        # For ImageNet, we use a Densenet with depth 161 and growth rate 48
+        model = torchvision.models.densenet161(pretrained=False)
+    else:
+        raise ValueError('Dataset not supported.')
+
+    return model
+
+
+def _get_pretrained_torch_model(dataset: str, path: str, download: bool) -> torch.nn.Module:
     """Returns the pretrained Torch model for a given dataset.
 
     Parameters
@@ -191,28 +230,16 @@ def _get_torch_model(dataset: str, path: str, download: bool) -> torch.nn.Module
     Returns
     -------
     torch.nn.Module
-        The pretrained PyTorch model for the given dataset.
+        The pretrained Torch model for the given dataset.
     """
-
-    # Use the models that have shown the best top-1 accuracy
-    if dataset in ['cifar10', 'cifar100']:
-        # For CIFAR10(0), we use a DenseNet with depth 190 and growth rate 40
-        num_classes = 10 if dataset == 'cifar10' else 100
-        model = cifar_models.densenet(
-            depth=190, growthRate=40, num_classes=num_classes)
-    elif dataset == 'imagenet':
-        # For ImageNet, we use a Densenet with depth 161 and growth rate 48
-        model = torchvision.models.densenet161(pretrained=False)
-    else:
-        raise ValueError('Dataset not supported.')
-
+    model = _get_torch_model(dataset)
     if not pathlib.Path(path).exists():
         if download:
             pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
             _download_pretrained_model(dataset, path)
         else:
             raise RuntimeError(
-                'No model found: {}. Use --download-model to automatically download missing models.'.format(path))
+                'No pretrained model found: {}. Use --download-model to automatically download missing models.'.format(path))
 
     model = model_tools.load_model(model, path, False, False)
     return model
@@ -264,9 +291,9 @@ def _get_num_classes(dataset):
         raise ValueError('Dataset not supported')
 
 
-def _get_detector(detector, options):
+def parse_detector(detector, options, failure_value=-np.Infinity):
     if detector in supported_distance_tools:
-        return detectors.DistanceDetector(parse_distance_tool(detector, options))
+        return detectors.DistanceDetector(parse_distance_tool(detector, options, failure_value))
     else:
         raise ValueError('Detector not supported.')
 
@@ -287,24 +314,26 @@ def parse_attack_constructor(attack_name, p):
         raise ValueError('Attack not supported.')
 
 
-def parse_distance_tool(tool_name, options):
+def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
     anti_attack = options['anti_attack']
     anti_attack_p = options['anti_attack_p']
     attack_workers = options['attack_workers']
-    batch_worker = options['batch_worker']
     foolbox_model = options['foolbox_model']
     parallelize_anti_attack = options['parallelize_anti_attack']
+    torch_model = options['torch_model']
 
     if tool_name == 'anti-attack':
         # We treat failures as -Infinity because failed
         # detection means that the sample is likely adversarial
 
+        batch_worker = batch_attack.TorchWorker(torch_model)
+
         if parallelize_anti_attack:
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
-                                                               anti_attack_p, -np.Infinity, batch_worker, attack_workers)
+                                                               anti_attack_p, failure_value, batch_worker, attack_workers)
         else:
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
-                                                               anti_attack_p, -np.Infinity)
+                                                               anti_attack_p, failure_value)
     else:
         raise ValueError('Distance tool not supported.')
 
@@ -319,144 +348,231 @@ def add_options(options):
     return _add_options
 
 
+def set_parameters(parameters):
+    def _set_parameters(func):
+        @functools.wraps(func)
+        def _parse_set_parameters(options, *args, **kwargs):
+            set_parameters_options = dict(options)
+            for key, value in parameters.items():
+                set_parameters_options[key] = value
+
+            return func(set_parameters_options, *args, **kwargs)
+        return _parse_set_parameters
+    return _set_parameters
+
+
 def global_options(func):
     @click.argument('dataset', type=click.Choice(datasets))
-    @click.option('-dt', '--dataset-type', default='test', show_default=True, type=click.Choice(['train', 'test']),
-                  help='Sets the dataset (train or test) that will be used.')
     @click.option('-df', '--data-folder', default=None, type=click.Path(file_okay=False, dir_okay=True),
                   help='The path to the folder where the dataset is stored (or will be downloaded). '
                   'If unspecified, it defaults to \'./data/genuine/$dataset$\'.')
-    @click.option('-mp', '--model-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
-                  help='The path to the tar where the dataset is stored (or will be downloaded). '
-                  'Ignored if dataset is \'imagenet\'. '
-                  'If unspecified it defaults to \'./pretrained_models/$dataset$.pth.tar\'.')
-    @click.option('-rp', '--results-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
-                  help='The path to the CSV file where the results will be saved. If unspecified '
-                  'it defaults to \'./results/$command$/$datetime$.csv\'')
-    @click.option('-b', '--batch', default=5, show_default=True,
-                  type=click.IntRange(1, None))
-    @click.option('-mb', '--max-batches', default=0, show_default=True, type=click.IntRange(0, None),
-                  help='The maximum number of batches. 0 disables batch capping.')
+    @click.option('-b', '--batch', default=5, show_default=True, type=click.IntRange(1, None),
+                  help='The size of each batch.')
     @click.option('-lw', '--loader-workers', default=2, show_default=True, type=click.IntRange(0, None),
-                  help='The number of parallel workers that will load the samples from the dataset.'
+                  help='The number of parallel workers that will load the samples from the dataset. '
                   '0 disables parallelization.')
-    @click.option('-dm', '--download-model', is_flag=True,
-                  help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
     @click.option('-dd', '--download-dataset', is_flag=True,
-                  help='If the dataset files do not exist, download them (not supported for ImageNet).')
+                  help='If the dataset files do not exist, download them.')
+    @click.option('-cp', '--config-path', default='./config.ini', type=click.Path(file_okay=True, exists=True),
+                  help='The path to the configuration file.')
+    @click.option('-nc', '--no-cuda', is_flag=True)
     @click.option('-v', '--verbosity', default='info', show_default=True, type=click.Choice(['debug', 'info', 'warning', 'error', 'critical']),
                   help='Sets the level of verbosity.')
-    @click.pass_context
     @functools.wraps(func)
-    def _parse_global_options(ctx, dataset, dataset_type, data_folder, model_path, results_path, batch, max_batches, loader_workers, download_model, download_dataset, verbosity, *args, **kwargs):
+    def _parse_global_options(dataset, data_folder, batch, loader_workers, download_dataset, config_path, no_cuda, verbosity, *args, **kwargs):
+        start_time = datetime.datetime.now()
+
+        command = ' '.join(sys.argv[1:])
+
         if data_folder is None:
             data_folder = './data/genuine/' + dataset
+
+        train_loader, test_loader = _get_genuine_loaders(
+            dataset, data_folder, batch, loader_workers, download_dataset, config_path)
+
+        num_classes = _get_num_classes(dataset)
+
+        cuda = torch.cuda.is_available() and not no_cuda
+
+        logging.getLogger('OffenseDefense').setLevel(verbosity.upper())
+
+        parsed_common_options = {
+            'command': command,
+            'cuda': cuda,
+            'dataset': dataset,
+            'num_classes': num_classes,
+            'start_time': start_time,
+            'test_loader': test_loader,
+            'train_loader': train_loader
+        }
+
+        return func(parsed_common_options, *args, **kwargs)
+    return _parse_global_options
+
+
+def pretrained_model_options(func):
+    @click.option('-mp', '--model-path', type=click.Path(file_okay=True, dir_okay=False), default=None)
+    @click.option('-dm', '--download-model', is_flag=True,
+                  help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
+    @functools.wraps(func)
+    def _parse_pretrained_model_options(options, model_path, download_model, *args, **kwargs):
+        cuda = options['cuda']
+        dataset = options['dataset']
+        num_classes = options['num_classes']
 
         if model_path is None:
             model_path = './pretrained_models/' + dataset + '.pth.tar'
 
-        if results_path is None:
-            results_path = _get_results_default_path(ctx.command.name)
-
-        command = ' '.join(sys.argv[1:])
-
-        train_loader, test_loader = _get_loaders(
-            dataset, data_folder, batch, loader_workers, download_dataset)
-
-        if dataset_type == 'train':
-            loader = train_loader
-        else:
-            loader = test_loader
-
-        if max_batches > 0:
-            loader = loaders.MaxBatchLoader(loader, max_batches)
-
-        torch_model = _get_torch_model(dataset, model_path, download_model)
+        torch_model = _get_pretrained_torch_model(
+            dataset, model_path, download_model)
         torch_model = torch.nn.Sequential(
             _get_preprocessing(dataset), torch_model)
+
         torch_model.eval()
 
-        num_classes = _get_num_classes(dataset)
+        if cuda:
+            torch_model.cuda()
+
+        device = torch.cuda.current_device() if cuda else 'cpu'
 
         foolbox_model = foolbox.models.PyTorchModel(
-            torch_model, (0, 1), num_classes, channel_axis=3, device=torch.cuda.current_device(), preprocessing=(0, 1))
+            torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
 
-        logger.setLevel(verbosity.upper())
+        parsed_pretrained_model_options = dict(options)
 
-        parsed_global_options = {
-            'command': command,
-            'dataset': dataset,
-            'dataset_type': dataset_type,
-            'foolbox_model': foolbox_model,
-            'loader': loader,
-            'torch_model': torch_model,
-            'results_path': results_path
-        }
+        parsed_pretrained_model_options['foolbox_model'] = foolbox_model
+        parsed_pretrained_model_options['torch_model'] = torch_model
 
-        return func(parsed_global_options, *args, **kwargs)
-    return _parse_global_options
+        return func(parsed_pretrained_model_options, *args, **kwargs)
+    return _parse_pretrained_model_options
+
+
+def train_options(func):
+    @click.argument('epochs', type=click.IntRange(1, None))
+    @click.option('-dt', '--dataset-type', default='train', show_default=True, type=click.Choice(['train', 'test']),
+                  help='Sets the dataset (train or test) that will be used.')
+    @click.option('-o', '--optimizer', type=click.Choice(['adam', 'sgd']), default='adam', show_default=True)
+    @click.option('-lr', '--learning_rate', type=float, default=1e-3, show_default=True)
+    @click.option('-wd', '--weight-decay', type=float, default=0, show_default=True)
+    @click.option('-ab', '--adam-betas', nargs=2, type=click.Tuple([float, float]), default=(0.9, 0.999), show_default=True)
+    @click.option('-ae', '--adam-epsilon', type=float, default=1e-8, show_default=True)
+    @click.option('-aa', '--adam-amsgrad', is_flag=True)
+    @click.option('-sm', '--sgd-momentum', type=float, default=0, show_default=True)
+    @click.option('-sd', '--sgd-dampening', type=float, default=0, show_default=True)
+    @click.option('-sn', '--sgd-nesterov', is_flag=True)
+    @functools.wraps(func)
+    def _parse_train_options(options, epochs, dataset_type, optimizer, learning_rate, weight_decay, adam_betas, adam_epsilon, adam_amsgrad, sgd_momentum, sgd_dampening, sgd_nesterov, *args, **kwargs):
+        torch_model = options['torch_model']
+
+        if dataset_type == 'train':
+            loader = options['train_loader']
+        else:
+            loader = options['test_loader']
+
+        if optimizer == 'adam':
+            optimizer = torch.optim.Adam(
+                torch_model.parameters(), lr=learning_rate, betas=adam_betas, weight_decay=weight_decay, eps=adam_epsilon, amsgrad=adam_amsgrad)
+        elif optimizer == 'sgd':
+            optimizer = torch.optim.SGD(
+                torch_model.parameters(), lr=learning_rate, momentum=sgd_momentum,
+                dampening=sgd_dampening, weight_decay=weight_decay, nesterov=sgd_nesterov)
+        else:
+            raise ValueError('Optimizer not supported.')
+
+        parsed_train_options = dict(options)
+
+        parsed_train_options['adam_betas'] = adam_betas
+        parsed_train_options['adam_epsilon'] = adam_epsilon
+        parsed_train_options['dataset_type'] = dataset_type
+        parsed_train_options['epochs'] = epochs
+        parsed_train_options['learning_rate'] = learning_rate
+        parsed_train_options['loader'] = loader
+        parsed_train_options['optimizer'] = optimizer
+        parsed_train_options['sgd_dampening'] = sgd_dampening
+        parsed_train_options['sgd_momentum'] = sgd_momentum
+        parsed_train_options['sgd_nesterov'] = sgd_nesterov
+        parsed_train_options['weight_decay'] = weight_decay
+
+        return func(parsed_train_options, *args, **kwargs)
+    return _parse_train_options
+
+
+def test_options(test_name):
+    def _test_options(func):
+        @click.option('-dt', '--dataset-type', default='test', show_default=True, type=click.Choice(['train', 'test']),
+                      help='Sets the dataset (train or test) that will be used.')
+        @click.option('-rp', '--results-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
+                      help='The path to the CSV file where the results will be saved. If unspecified '
+                      'it defaults to \'./results/{}/$start_time$.csv\''.format(test_name))
+        @functools.wraps(func)
+        def _parse_test_options(options, dataset_type, results_path, *args, **kwargs):
+            dataset = options['dataset']
+            start_time = options['start_time']
+
+            if dataset_type == 'train':
+                loader = options['train_loader']
+            else:
+                loader = options['test_loader']
+
+            if results_path is None:
+                results_path = _get_results_default_path(
+                    test_name, dataset, start_time)
+
+            parsed_test_options = dict(options)
+            parsed_test_options['dataset_type'] = dataset_type
+            parsed_test_options['loader'] = loader
+            parsed_test_options['results_path'] = results_path
+
+            return func(parsed_test_options, *args, **kwargs)
+        return _parse_test_options
+    return _test_options
+
+
+def parallelization_options(func):
+    @click.option('-nap', '--no-attack-parallelization', is_flag=True,
+                  help='Disables attack parallelization. This might increase the execution time.')
+    @click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
+                  help='The number of parallel workers that will be used to speed up the attack (if possible).')
+    @functools.wraps(func)
+    def parse_parallelization_options(options, no_attack_parallelization, attack_workers, *args, **kwargs):
+        torch_model = options['torch_model']
+
+        enable_attack_parallelization = not no_attack_parallelization
+        model_batch_worker = batch_attack.TorchWorker(torch_model)
+
+        parsed_parallelization_options = dict(options)
+        parsed_parallelization_options['attack_workers'] = attack_workers
+        parsed_parallelization_options['enable_attack_parallelization'] = enable_attack_parallelization
+        parsed_parallelization_options['model_batch_worker'] = model_batch_worker
+
+        return func(parsed_parallelization_options, *args, **kwargs)
+    return parse_parallelization_options
 
 
 def attack_options(attacks):
     def _attack_options(func):
-        @global_options
         @click.argument('attack', type=click.Choice(attacks))
         @click.option('-p', default='inf', show_default=True, type=click.Choice(supported_ps),
                       help='The L_p distance of the attack.')
-        @click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
-                      help='The number of parallel workers that will be used to speed up the attack (if possible).')
-        @click.option('-lt', '--loader-type', default='standard', show_default=True, type=click.Choice(['standard', 'adversarial']),
-                      help='The type of loader that will be used. \'standard\' uses the standard loader, \'adversarial\''
-                      'replaces the samples with their adversarial samples (removing failed attacks).')
-        @click.option('-la', '--loader-attack', default='deepfool', show_default=True, type=click.Choice(supported_attacks),
-                      help='The attack that will be used by the loader. Ignored if loader-type is not \'adversarial\'.')
-        @click.option('-lap', '--loader-attack-p', default='inf', show_default=True, type=click.Choice(supported_ps),
-                      help='The L_p distance of the loader attack. Ignored if loader-type is not \'adversarial\'.')
-        @click.option('-nap', '--no-attack-parallelization', is_flag=True,
-                      help='Disables attack parallelization. This might increase the execution time.')
         @functools.wraps(func)
-        def _parse_attack_options(parsed_global_options, attack, p, attack_workers, loader_type, loader_attack, loader_attack_p, no_attack_parallelization, *args, **kwargs):
-            foolbox_model = parsed_global_options['foolbox_model']
-            torch_model = parsed_global_options['torch_model']
-            loader = parsed_global_options['loader']
+        def _parse_attack_options(options, attack, p, *args, **kwargs):
+            enable_attack_parallelization = options['enable_attack_parallelization']
+            foolbox_model = options['foolbox_model']
+            torch_model = options['torch_model']
+            loader = options['loader']
 
             if p == '2':
                 p = 2
             elif p == 'inf':
                 p = np.inf
 
-            enable_attack_parallelization = not no_attack_parallelization
-
             parallelize_attack = enable_attack_parallelization and attack in parallelizable_attacks
 
-            batch_worker = batch_attack.TorchWorker(torch_model)
-
-            if loader_type == 'standard':
-                pass
-            elif loader_type == 'adversarial':
-                parallelize_loader_attack = enable_attack_parallelization and loader_attack in parallelizable_attacks
-
-                loader_attack_constructor = parse_attack_constructor(
-                    loader_attack, loader_attack_p)
-                loader_attack = loader_attack_constructor(
-                    foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(loader_attack_p))
-
-                if parallelize_loader_attack:
-                    loader = loaders.AdversarialLoader(
-                        loader, foolbox_model, loader_attack, True, batch_worker, attack_workers)
-                else:
-                    loader = loaders.AdversarialLoader(
-                        loader, foolbox_model, loader_attack, True)
-
-            parsed_attack_options = dict(parsed_global_options)
+            parsed_attack_options = dict(options)
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
             parsed_attack_options['attack_name'] = attack
-
-            parsed_attack_options['batch_worker'] = batch_worker
-            parsed_attack_options['attack_workers'] = attack_workers
             parsed_attack_options['enable_attack_parallelization'] = enable_attack_parallelization
-            parsed_attack_options['loader_attack'] = loader_attack
             parsed_attack_options['p'] = p
             parsed_attack_options['parallelize_attack'] = parallelize_attack
             parsed_attack_options['loader'] = loader
@@ -470,52 +586,50 @@ def attack_options(attacks):
 # distance_tool, call get_distance_tool.
 
 
-def distance_options(attacks):
-    def _distance_options(func):
-        @attack_options(attacks)
-        @click.option('-aa', '--anti-attack', default='deepfool', type=click.Choice(supported_attacks),
-                      help='The anti-attack that will be used (if required).')
-        @click.option('-aap', '--anti-attack-p', default=None, type=click.Choice(supported_ps),
-                      help='The L_p distance of the anti-attack. If unspecified it defaults to p.')
-        @functools.wraps(func)
-        def _parse_distance_options(parsed_attack_options, anti_attack, anti_attack_p, *args, **kwargs):
-            foolbox_model = parsed_attack_options['foolbox_model']
-            p = parsed_attack_options['p']
-            enable_attack_parallelization = parsed_attack_options['enable_attack_parallelization']
+def distance_options(func):
+    @click.option('-aa', '--anti-attack', default='deepfool', type=click.Choice(supported_attacks),
+                  help='The anti-attack that will be used (if required).')
+    @click.option('-aap', '--anti-attack-p', default='inf', type=click.Choice(supported_ps),
+                  help='The L_p distance of the anti-attack (if required).')
+    @functools.wraps(func)
+    def _parse_distance_options(parsed_attack_options, anti_attack, anti_attack_p, *args, **kwargs):
+        foolbox_model = parsed_attack_options['foolbox_model']
+        enable_attack_parallelization = parsed_attack_options['enable_attack_parallelization']
 
-            if anti_attack_p is None:
-                anti_attack_p = p
+        if anti_attack_p == '2':
+            anti_attack_p = 2
+        elif anti_attack_p == 'inf':
+            anti_attack_p = np.inf
 
-            parallelize_anti_attack = (
-                anti_attack in parallelizable_attacks) and enable_attack_parallelization
+        parallelize_anti_attack = (
+            anti_attack in parallelizable_attacks) and enable_attack_parallelization
 
-            anti_attack_constructor = parse_attack_constructor(
-                anti_attack, anti_attack_p)
-            anti_attack = anti_attack_constructor(
-                foolbox_model, foolbox.criteria.Misclassification(),
-                distance_tools.LpDistance(anti_attack_p))
+        anti_attack_constructor = parse_attack_constructor(
+            anti_attack, anti_attack_p)
+        anti_attack = anti_attack_constructor(
+            foolbox_model, foolbox.criteria.Misclassification(),
+            distance_tools.LpDistance(anti_attack_p))
 
-            parsed_distance_options = dict(parsed_attack_options)
+        parsed_distance_options = dict(parsed_attack_options)
 
-            parsed_distance_options['anti_attack'] = anti_attack
-            parsed_distance_options['anti_attack_p'] = anti_attack_p
-            parsed_distance_options['parallelize_anti_attack'] = parallelize_anti_attack
+        parsed_distance_options['anti_attack'] = anti_attack
+        parsed_distance_options['anti_attack_p'] = anti_attack_p
+        parsed_distance_options['parallelize_anti_attack'] = parallelize_anti_attack
 
-            return func(parsed_distance_options, *args, **kwargs)
-        return _parse_distance_options
-    return _distance_options
+        return func(parsed_distance_options, *args, **kwargs)
+    return _parse_distance_options
 
 
-def detector_options(attacks):
+def detector_options(failure_value):
     def _detector_options(func):
-        @distance_options(attacks)
         @click.argument('detector', type=click.Choice(supported_detectors))
         @functools.wraps(func)
         def _parse_detector_options(parsed_distance_options, detector, *args, **kwargs):
             parsed_detector_options = dict(parsed_distance_options)
 
             # detector must be parsed last
-            detector = _get_detector(detector, parsed_detector_options)
+            detector = parse_detector(
+                detector, parsed_detector_options, failure_value)
             parsed_detector_options['detector'] = detector
 
             return func(parsed_detector_options, *args, **kwargs)
@@ -523,14 +637,12 @@ def detector_options(attacks):
     return _detector_options
 
 
-def evasion_options(attacks):
-    def _detector_options(func):
-        @detector_options(attacks)
-        @click.argument('threshold', type=float)
-        @functools.wraps(func)
-        def _parse_evasion_options(parsed_detector_options, threshold, *args, **kwargs):
-            parsed_evasion_option = dict(parsed_detector_options)
-            parsed_evasion_option['threshold'] = threshold
-            return func(parsed_evasion_option, *args, **kwargs)
-        return _parse_evasion_options
-    return _detector_options
+def evasion_options(func):
+    @click.argument('threshold', type=float)
+    @functools.wraps(func)
+    def _parse_evasion_options(parsed_detector_options, threshold, *args, **kwargs):
+        parsed_evasion_option = dict(parsed_detector_options)
+        parsed_evasion_option['threshold'] = threshold
+
+        return func(parsed_evasion_option, *args, **kwargs)
+    return _parse_evasion_options

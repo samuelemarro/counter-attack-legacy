@@ -260,7 +260,8 @@ paket-files/
 __pycache__/
 *.pyc
 
-#Pretrained models
+#Trained and retrained models
+trained_models
 pretrained_models
 
 #Data
