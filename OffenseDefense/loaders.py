@@ -1,4 +1,6 @@
 import collections
+import random
+
 import numpy as np
 from . import batch_attack, utils
 
@@ -17,15 +19,15 @@ class Loader:
 class TorchLoader(Loader):
     def __init__(self, torch_loader):
         self.torch_loader = torch_loader
-        self.torch_iterator = None
+        self._torch_iterator = None
 
     def __iter__(self):
-        self.torch_iterator = iter(self.torch_loader)
+        self._torch_iterator = iter(self.torch_loader)
         return self
 
     def __next__(self):
         try:
-            images, labels = next(self.torch_iterator)
+            images, labels = next(self._torch_iterator)
 
             images = images.numpy()
             labels = labels.numpy()
@@ -38,36 +40,70 @@ class TorchLoader(Loader):
         return len(self.torch_loader)
 
 
-class DetectorLoader(Loader):
-    def __init__(self, images_loader, detector, failure_value):
-        self.values = []
-        self.iterator = None
-
-        for images, _ in images_loader:
-            f = utils.Filter()
-            f['images'] = images
-
-            scores = detector.get_scores(images)
-
-            f['scores'] = scores
-            valid_indices = [i for i in range(
-                len(images)) if scores[i] is not None]
-            valid_indices = np.array(valid_indices)
-            f.filter(valid_indices)
-
-            self.values.append((images, np.array(scores)))
+class ListLoader(Loader):
+    def __init__(self, elements, batch_size, shuffle):
+        self.elements = elements
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self._iterator = None
 
     def __iter__(self):
-        self.iterator = iter(self.values)
+        if self.shuffle:
+            elements = list(self.elements)
+            random.shuffle(elements)
+        else:
+            elements = self.elements
+
+        batches = []
+
+        for i in range((len(elements) + self.batch_size - 1) // self.batch_size):
+            batch = elements[i * self.batch_size:(i + 1) * self.batch_size]
+
+            if isinstance(elements[0], tuple):
+                # Convert a list of tuples in separate lists
+                new_batch = []
+                for j in range(len(elements[0])):
+                    new_batch.append([])
+
+                for element in batch:
+                    for j, value in enumerate(element):
+                        new_batch[j].append(value)
+
+                batch = new_batch
+
+            # Convert each sub-batch (list of the same type of values) into a numpy array
+            batch = [np.array(sub_batch) for sub_batch in batch]
+            batches.append(batch)
+
+        self._iterator = iter(batches)
         return self
 
     def __next__(self):
-        try:
-            images, scores = next(self.iterator)
-
-            return images, scores
-        except StopIteration:
-            raise
+        return next(self._iterator)
 
     def __len__(self):
-        return len(self.values)
+        return (len(self.elements) + self.batch_size - 1) // self.batch_size
+
+
+class MaxBatchLoader:
+    def __init__(self, loader, max_batches):
+        self.loader = loader
+        self.max_batches = max_batches
+        self._batch_counter = 0
+        self._loader_iterator = None
+
+    def __iter__(self):
+        self._batch_counter = 0
+        self._loader_iterator = iter(self.loader)
+        return self
+
+    def __next__(self):
+        if self._batch_counter == self.max_batches:
+            raise StopIteration()
+
+        self._batch_counter += 1
+
+        return next(self._loader_iterator)
+
+    def __len__(self):
+        return self.max_batches

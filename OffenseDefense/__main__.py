@@ -29,10 +29,15 @@ def main(*args):
 @main.command()
 @parsing.global_options
 @parsing.pretrained_model_options
+@parsing.dataset_options('test')
 @parsing.test_options('attack')
 @parsing.parallelization_options
 @parsing.attack_options(parsing.supported_attacks)
-def attack(options):
+@click.option('-sdp', '--saved_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
+              help='The path to the .zip file where the adversarial samples will be saved. If unspecified, no adversarial samples will be saved.')
+@click.option('--no-test-warning', '-ntw', is_flag=True,
+              help='Disables the warning for running this test on the test set.')
+def attack(options, saved_dataset_path, no_test_warning):
     """
     Runs an attack against the model.
 
@@ -47,6 +52,7 @@ def attack(options):
     command = options['command']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
+    dataset_type = options['dataset_type']
     model_batch_worker = options['model_batch_worker']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
@@ -58,8 +64,15 @@ def attack(options):
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
-    distances, failure_count = tests.attack_test(foolbox_model, loader, attack, p,
-                                                 model_batch_worker, attack_workers)
+    save_adversarials = saved_dataset_path is not None
+
+    if dataset_type == 'test' and save_adversarials and not no_test_warning:
+        logger.warning('Remember to use \'-dt train\' if you plan to use the generated adversarials '
+                       'to train or calibrate an adversarial detector. You can disable this warning by passing '
+                       '\'--no-test-warning\' (alias: \'-ntw\').')
+
+    distances, failure_count, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, p,
+                                                                                          model_batch_worker, attack_workers, save_adversarials=save_adversarials)
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -74,10 +87,15 @@ def attack(options):
     utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header, transpose=True)
 
+    if save_adversarials:
+        dataset = list(zip(adversarials, adversarial_ground_truths))
+        utils.save_zip(dataset, saved_dataset_path)
+
 
 @main.command()
 @parsing.global_options
 @parsing.pretrained_model_options
+@parsing.dataset_options('test')
 @parsing.test_options('accuracy')
 @click.option('-tk', '--top-ks', nargs=2, type=click.Tuple([int, int]), default=(1, 5), show_default=True,
               help='The two top-k accuracies that will be computed.')
@@ -106,42 +124,56 @@ def accuracy(options, top_ks):
 
 @main.command()
 @parsing.global_options
+@parsing.dataset_options('train')
 @parsing.pretrained_model_options
 @parsing.test_options('detect')
 @parsing.parallelization_options
-@parsing.attack_options(parsing.supported_attacks)
-@parsing.distance_options
 @parsing.detector_options(-np.Infinity)
-@click.option('--no-detector-warning', '-ndw', is_flag=True,
+@click.argument('adversarial_dataset_path', type=click.Path(exists=True, file_okay=True, dir_okay=True))
+@click.option('--max-adversarial_batches', '-mab', type=click.IntRange(1, None), default=None,
+              help='The maximum number of batches. If unspecified, no batch limiting is applied.')
+@click.option('-sdp', '--saved_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
+              help='The path to the .zip file where the scores will be saved with their corresponding images. If unspecified, no scores will be saved.')
+@click.option('--no-test-warning', '-ntw', is_flag=True,
               help='Disables the warning for running this test on the test set.')
-def detect(options, no_detector_warning):
+def detect(options, adversarial_dataset_path, max_adversarial_batches, saved_dataset_path, no_test_warning):
     """
     Uses a detector to identify adversarial samples.
     """
 
+    batch_size = options['batch_size']
     command = options['command']
-    attack_name = options['attack_name']
-    attack_workers = options['attack_workers']
-    model_batch_worker = options['model_batch_worker']
     dataset_type = options['dataset_type']
     detector = options['detector']
     foolbox_model = options['foolbox_model']
-    loader = options['loader']
-    p = options['p']
+    genuine_loader = options['loader']
     results_path = options['results_path']
+    shuffle = options['shuffle']
     torch_model = options['torch_model']
 
-    if dataset_type == 'test' and not no_detector_warning:
+    adversarial_list = list(utils.load_zip(adversarial_dataset_path))
+
+    adversarial_loader = loaders.ListLoader(
+        adversarial_list, batch_size, shuffle)
+
+    if max_adversarial_batches is not None:
+        if (not options['shuffle']) and (not options['no_shuffle_warning']):
+            logger.warning('You are limiting the number of adversarial batches, but you aren\'t applying any shuffling. '
+                           'This means that the last parts of your adversarial dataset will be never used. You can disable this '
+                           'warning by passing \'--no-shuffle-warning\' (alias: \'-nsw\').')
+
+        adversarial_loader = loaders.MaxBatchLoader(
+            adversarial_loader, max_adversarial_batches)
+
+    save_scores = saved_dataset_path is not None
+
+    if dataset_type == 'test' and not no_test_warning:
         logger.warning('Remember to use \'-dt train\' if you plan to use the results '
                        'to pick a threshold for other tests. You can disable this warning by passing '
-                       '\'--no-detector-warning\' (alias: \'-ndw\').')
+                       '\'--no-test-warning\' (alias: \'-ntw\').')
 
-    attack_constructor = parsing.parse_attack_constructor(attack_name, p)
-    attack = attack_constructor(
-        foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
-
-    genuine_scores, adversarial_scores, success_rate = tests.standard_detector_test(
-        foolbox_model, loader, attack, detector, model_batch_worker, attack_workers)
+    genuine_scores, adversarial_scores, genuine_samples, adversarial_samples = tests.standard_detector_test(
+        foolbox_model, genuine_loader, adversarial_loader, detector, save_scores)
 
     false_positive_rates, true_positive_rates, thresholds = utils.roc_curve(
         genuine_scores, adversarial_scores)
@@ -151,8 +183,7 @@ def detect(options, no_detector_warning):
     area_under_curve = sklearn.metrics.auc(
         false_positive_rates, true_positive_rates)
 
-    info = [['Success Rate', '{:2.2f}%'.format(success_rate * 100.0)],
-            ['ROC AUC', '{:2.2f}%'.format(area_under_curve * 100.0)],
+    info = [['ROC AUC', '{:2.2f}%'.format(area_under_curve * 100.0)],
             ['Best Threshold', '{:2.2e}'.format(best_threshold)],
             ['Best True Positive Rate', '{:2.2f}%'.format(best_tpr * 100.0)],
             ['Best False Positive Rate', '{:2.2f}%'.format(best_fpr * 100.0)]]
@@ -171,51 +202,31 @@ def detect(options, no_detector_warning):
     utils.save_results(results_path, table=columns, command=command,
                        info=info, header=header, transpose=True)
 
+    if save_scores:
+        # Remove failures
+        failure_value = -np.Infinity
 
-@main.command()
-@parsing.global_options
-@parsing.pretrained_model_options
-@parsing.test_options('distance')
-@parsing.parallelization_options
-@parsing.distance_options
-@click.argument('distance-tool', type=click.Choice(parsing.supported_detectors))
-def distance(options, distance_tool):
-    """
-    Estimates the distance of the samples from the decision boundary.
-    """
+        genuine_samples, genuine_scores = utils.filter_lists(
+            lambda _, score: score is not failure_value, genuine_samples, genuine_scores)
 
-    command = options['command']
-    loader = options['loader']
-    foolbox_model = options['foolbox_model']
-    results_path = options['results_path']
-    torch_model = options['torch_model']
-    distance_tool = parsing.parse_distance_tool(
-        distance_tool, options, -np.Infinity)
+        adversarial_samples, adversarial_scores = utils.filter_lists(
+            lambda _, score: score is not failure_value, adversarial_samples, adversarial_scores)
 
-    distances, failure_count = tests.distance_test(
-        foolbox_model, distance_tool, loader)
+        genuine_list = zip(genuine_samples, genuine_scores)
+        adversarial_list = zip(adversarial_samples, adversarial_scores)
 
-    average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
-        distances, failure_count)
+        dataset = (genuine_list, adversarial_list)
 
-    info = [['Attack Success Rate', '{:2.2f}%'.format(success_rate * 100.0)],
-            ['Average Distance', '{:2.2e}'.format(average_distance)],
-            ['Median Distance', '{:2.2e}'.format(median_distance)],
-            ['Adjusted Median Distance', '{:2.2e}'.format(adjusted_median_distance)]]
-
-    header = ['Distances']
-
-    utils.save_results(results_path, table=[distances], command=command,
-                       info=info, header=header, transpose=True)
+        utils.save_zip(dataset, saved_dataset_path)
 
 
 @main.command()
 @parsing.global_options
 @parsing.pretrained_model_options
+@parsing.dataset_options('test')
 @parsing.test_options('black_box_evasion')
 @parsing.parallelization_options
 @parsing.attack_options(parsing.black_box_attacks)
-@parsing.distance_options
 @parsing.detector_options(-np.Infinity)
 @parsing.evasion_options
 def black_box_evasion(options):
@@ -242,8 +253,8 @@ def black_box_evasion(options):
     attack = attack_constructor(
         composite_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
-    distances, failure_count = tests.attack_test(composite_model, loader, attack,
-                                                 p, model_batch_worker, attack_workers, name='Black Box Evasion Test')
+    distances, failure_count, _, _ = tests.attack_test(composite_model, loader, attack,
+                                                       p, model_batch_worker, attack_workers, name='Black Box Evasion Test')
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -262,10 +273,10 @@ def black_box_evasion(options):
 @main.command()
 @parsing.global_options
 @parsing.pretrained_model_options
+@parsing.dataset_options('test')
 @parsing.test_options('differentiable_evasion')
 @parsing.parallelization_options
 @parsing.attack_options(parsing.differentiable_attacks)
-@parsing.distance_options
 @parsing.detector_options(-np.Infinity)
 @parsing.evasion_options
 def differentiable_evasion(options):
@@ -291,8 +302,8 @@ def differentiable_evasion(options):
     #TODO: Complete
 
     composite_model = None
-    distances, failure_count = tests.attack_test(composite_model, loader, attack,
-                                                 p, model_batch_worker, attack_workers, name='Differentiable Evasion Test')
+    distances, failure_count, _, _ = tests.attack_test(composite_model, loader, attack,
+                                                       p, model_batch_worker, attack_workers, name='Differentiable Evasion Test')
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -311,6 +322,7 @@ def differentiable_evasion(options):
 @main.command()
 @parsing.global_options
 @parsing.pretrained_model_options
+@parsing.dataset_options('test')
 @parsing.test_options('parallelization')
 @parsing.set_parameters({'enable_attack_parallelization': True})
 @parsing.attack_options(parsing.parallelizable_attacks)
@@ -365,6 +377,7 @@ def parallelization(options, attack_workers):
 
 @main.command()
 @parsing.global_options
+@parsing.dataset_options('train')
 @parsing.train_options
 @click.option('-tmp', '--trained-model-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
               help='The path to the file where the model will be saved. If unspecified, it defaults to \'./train_model/$dataset$ $start_time$.pth.tar\'')
@@ -395,15 +408,14 @@ def train_model(options, trained_model_path):
 @main.command()
 @parsing.global_options
 @parsing.pretrained_model_options
+@parsing.dataset_options('train')
 @parsing.parallelization_options
 @parsing.train_options
-@parsing.distance_options
 @parsing.detector_options(None)
 @click.option('-l', '--loss', type=click.Choice(['l1', 'l2', 'smooth_l1']), default='l2', show_default=True)
 @click.option('-tap', '--trained-approximator-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
               help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./train_approximator/$dataset$ $start_time$.pth.tar\'')
 def train_approximator(options, loss, trained_approximator_path):
-    command = options['command']
     cuda = options['cuda']
     dataset = options['dataset']
     detector = options['detector']

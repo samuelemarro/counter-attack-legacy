@@ -7,7 +7,7 @@ import datetime
 import json
 import pathlib
 import itertools
-import urllib
+import urllib.request
 from typing import Tuple
 
 import numpy as np
@@ -36,21 +36,22 @@ class AverageMeter(object):
             self.avg = self.sum / self.count
 
 
-def save_zip(object, filename, protocol=0):
+def save_zip(object, path, protocol=0):
     """
     Saves a compressed object to disk
     """
-    file = gzip.GzipFile(filename, 'wb')
+    pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
+    file = gzip.GzipFile(path, 'wb')
     pickled = pickle.dumps(object, protocol)
     file.write(pickled)
     file.close()
 
 
-def load_zip(filename):
+def load_zip(path):
     """
     Loads a compressed object from disk
     """
-    file = gzip.GzipFile(filename, 'rb')
+    file = gzip.GzipFile(path, 'rb')
     buffer = b""
     while True:
         data = file.read()
@@ -134,6 +135,20 @@ def lp_distance(x, y, p, batch, broadcast=True):
         return np.array([single_image(_x - _y) for _x, _y in zip(x, y)])
     else:
         return single_image(x - y)
+
+
+def filter_lists(condition, *lists):
+    final_lists = []
+
+    for i in range(len(lists)):
+        final_lists.append([])
+
+    for _tuple in zip(*lists):
+        if(condition(*_tuple)):
+            for i, value in enumerate(_tuple):
+                final_lists[i].append(value)
+
+    return final_lists
 
 
 def is_top_k(predictions, label, k=1):
@@ -263,9 +278,20 @@ class Filter(dict):
                                  'of the other values (inserted value of length {}, mismatched with \"{}\": {})'.format(value_length, existing_key, len(existing_value)))
         super().__setitem__(key, value)
 
+    def empty(self):
+        for key in self.keys():
+            super().__setitem__(key, [])
+
     def filter(self, indices, name=None):
         if name in self.filter_stats:
             raise ValueError('\'name\' must be unique')
+
+        if name == None:
+            name = 'filter_{}'.format(len(self.filter_stats))
+
+        if len(indices) == 0:
+            self.empty()
+            return
 
         for key in self.keys():
             if key in self.custom_filters:

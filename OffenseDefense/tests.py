@@ -43,75 +43,37 @@ def accuracy_test(foolbox_model: foolbox.models.Model,
     return [accuracy.avg for accuracy in accuracies]
 
 
-def distance_test(foolbox_model: foolbox.models.Model,
-                  test_distance_tool,
-                  loader: loaders.Loader,
-                  name: str = 'Distance Test'):
-
-    final_estimated_distances = []
-    success_rate = utils.AverageMeter()
-
-    for images, labels in _get_iterator(name, loader):
-        # Remove misclassified samples
-        correct_classification_filter = batch_attack.get_correct_samples(
-            foolbox_model, images, labels)
-
-        images = correct_classification_filter['images']
-        labels = correct_classification_filter['image_labels']
-
-        estimated_distances = test_distance_tool.get_distances(images)
-        successful_estimated_distances = [
-            distance for distance in estimated_distances if distance is not None]
-
-        success_rate.update(
-            1, len(successful_estimated_distances))
-        success_rate.update(
-            0, len(images) - len(successful_estimated_distances))
-
-        final_estimated_distances += successful_estimated_distances
-
-        failure_count = success_rate.count - success_rate.sum
-        average_distance, median_distance, _, adjusted_median_distance = utils.distance_statistics(
-            final_estimated_distances, failure_count)
-
-        logger.debug('{}:'.format(test_distance_tool.name))
-        logger.debug('Average Distance: {:2.2e}'.format(average_distance))
-        logger.debug('Median Distance: {:2.2e}'.format(median_distance))
-        logger.debug('Success Rate: {:2.2f}%'.format(
-            success_rate.avg * 100.0))
-        logger.debug('Adjusted Median Distance: {:2.2e}'.format(
-            adjusted_median_distance))
-
-        logger.debug('\n============\n')
-
-    failure_count = success_rate.count - success_rate.sum
-
-    return final_estimated_distances, failure_count
-
-
 def attack_test(foolbox_model: foolbox.models.Model,
                 loader: loaders.Loader,
                 attack: foolbox.attacks.Attack,
                 p: int,
                 batch_worker: batch_processing.BatchWorker = None,
                 num_workers: int = 50,
+                save_adversarials: bool = False,
                 name: str = 'Attack Test') -> Tuple[float, np.ndarray]:
 
     success_rate = utils.AverageMeter()
     distances = []
+    adversarials = [] if save_adversarials else None
+    adversarial_ground_truths = [] if save_adversarials else None
 
     for images, labels in _get_iterator(name, loader):
         adversarial_filter = batch_attack.get_adversarials(
             foolbox_model, images, labels, attack, True, True, batch_worker=batch_worker, num_workers=num_workers)
-        adversarials = adversarial_filter['adversarials']
+        batch_adversarials = adversarial_filter['adversarials']
 
-        success_rate.update(1, len(adversarials))
-        success_rate.update(0, len(images) - len(adversarials))
+        success_rate.update(1, len(batch_adversarials))
+        success_rate.update(0, len(images) - len(batch_adversarials))
 
-        # If there are no successful adversarials, don't update the distances
-        if len(adversarials) > 0:
+        # If there are no successful adversarials, don't update the distances or the adversarials
+        if len(batch_adversarials) > 0:
             distances += list(utils.lp_distance(
                 adversarial_filter['adversarials'], adversarial_filter['images'], p, True))
+
+            if save_adversarials:
+                adversarials += list(batch_adversarials)
+                adversarial_ground_truths += list(
+                    adversarial_filter['image_labels'])
 
         failure_count = success_rate.count - \
             success_rate.sum
@@ -128,32 +90,35 @@ def attack_test(foolbox_model: foolbox.models.Model,
 
     failure_count = success_rate.count - success_rate.sum
 
-    return distances, failure_count
+    if save_adversarials:
+        adversarials = np.array(adversarials)
+        adversarial_ground_truths = np.array(adversarial_ground_truths)
+
+    return distances, failure_count, adversarials, adversarial_ground_truths
 
 
 def standard_detector_test(foolbox_model: foolbox.models.Model,
-                           loader: loaders.Loader,
-                           attack: foolbox.attacks.Attack,
+                           genuine_loader: loaders.Loader,
+                           adversarial_loader: loaders.Loader,
                            detector: detectors.Detector,
-                           batch_worker: batch_processing.BatchWorker = None,
-                           num_workers: int = 50,
+                           save_samples: bool,
                            name: str = 'Detection Test'):
-    attack_success_rate = utils.AverageMeter()
+    genuine_samples = [] if save_samples else None
     genuine_scores = []
+    adversarial_samples = [] if save_samples else None
     adversarial_scores = []
 
-    for images, labels in _get_iterator(name, loader):
-        adversarial_filter = batch_attack.get_adversarials(
-            foolbox_model, images, labels, attack, True, True, batch_worker=batch_worker, num_workers=num_workers)
-
-        adversarials = adversarial_filter['adversarials']
-
-        attack_success_rate.update(1, len(adversarials))
-        attack_success_rate.update(0, len(images) - len(adversarials))
-
-        # Note: We evaluate the detector on all the genuine samples,
-        # even the ones that could not be attacked
+    for images, _ in _get_iterator(name + ' (Genuine)', genuine_loader):
+        if save_samples:
+            genuine_samples += list(images)
         genuine_scores += list(detector.get_scores(images))
+
+        logger.debug('\n============\n')
+
+    for adversarials, _ in _get_iterator(name + ' (Adversarial)', adversarial_loader):
+        if save_samples:
+            adversarial_samples += list(adversarials)
+
         adversarial_scores += list(detector.get_scores(adversarials))
 
         fpr, tpr, thresholds = utils.roc_curve(
@@ -162,8 +127,6 @@ def standard_detector_test(foolbox_model: foolbox.models.Model,
             tpr, fpr, thresholds)
         area_under_curve = metrics.auc(fpr, tpr)
 
-        logger.debug('Attack Success Rate: {:2.2f}%'.format(
-            attack_success_rate.avg * 100.0))
         logger.debug('Detector AUC: {:2.2f}%'.format(area_under_curve * 100.0))
         logger.debug('Best Threshold: {:2.2e}'.format(best_threshold))
         logger.debug('Best TPR: {:2.2f}%'.format(best_tpr * 100.0))
@@ -171,7 +134,7 @@ def standard_detector_test(foolbox_model: foolbox.models.Model,
 
         logger.debug('\n============\n')
 
-    return genuine_scores, adversarial_scores, attack_success_rate.avg
+    return genuine_scores, adversarial_scores, genuine_samples, adversarial_samples
 
 
 def parallelization_test(foolbox_model: foolbox.models.Model,

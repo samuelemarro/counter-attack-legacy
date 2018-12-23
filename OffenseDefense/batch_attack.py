@@ -192,9 +192,7 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
         _filter = get_correct_samples(foolbox_model, images, labels)
         # If there are no correctly classified samples, return early
         if len(_filter['images']) == 0:
-            _filter['adversarials'] = []
-            _filter['adversarial_predictions'] = []
-            _filter['adversarial_labels'] = []
+            _filter.empty()
             logger.warning('No samples were classified correctly.')
             return _filter
 
@@ -220,17 +218,14 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
         successful_adversarial_indices, dtype=np.int)
 
     if remove_failed:
+        _filter.filter(successful_adversarial_indices,
+                       'successful_adversarial')
+
         # If there are no successful attacks, return early
         if len(successful_adversarial_indices) == 0:
-            _filter['adversarials'] = []
-            _filter['adversarial_predictions'] = []
-            _filter['adversarial_labels'] = []
             logger.warning(
                 'Could not find an adversarial sample for any of the provided samples.')
             return _filter
-
-        _filter.filter(successful_adversarial_indices,
-                       'successful_adversarial')
 
         # Convert to Numpy array after the failed samples have been removed
         _filter['adversarials'] = np.array(_filter['adversarials'])
