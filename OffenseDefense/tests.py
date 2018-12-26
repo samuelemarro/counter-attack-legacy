@@ -97,6 +97,35 @@ def attack_test(foolbox_model: foolbox.models.Model,
     return distances, failure_count, adversarials, adversarial_ground_truths
 
 
+def shallow_attack_test(foolbox_model: foolbox.models.Model,
+                        adversarial_loader,
+                        detector=None,
+                        threshold=None,
+                        name: str = 'Shallow Attack'):
+    success_rate = utils.AverageMeter()
+    for adversarials, ground_truth_labels in _get_iterator(name, adversarial_loader):
+        batch_predictions = foolbox_model.batch_predictions(adversarials)
+        labels = np.argmax(batch_predictions, axis=-1)
+
+        successful_attacks = np.not_equal(ground_truth_labels, labels)
+
+        if detector is not None:
+            if threshold is None:
+                raise ValueError(
+                    'threshold must be set if detector is not None.')
+            scores = np.array(detector.get_scores(adversarials))
+            valid_attacks = scores >= threshold
+
+            successful_attacks = np.logical_and(
+                successful_attacks, valid_attacks)
+
+        success_count = np.count_nonzero(successful_attacks)
+        success_rate.update(1, success_count)
+        success_rate.update(0, len(adversarials) - success_count)
+
+    return success_rate.avg
+
+
 def standard_detector_test(foolbox_model: foolbox.models.Model,
                            genuine_loader: loaders.Loader,
                            adversarial_loader: loaders.Loader,

@@ -5,6 +5,7 @@ import pathlib
 import os
 import shutil
 
+import art.defences
 import click
 import foolbox
 import numpy as np
@@ -13,7 +14,7 @@ import tarfile
 import torch
 import torchvision
 
-from . import batch_attack, cifar_models, detectors, distance_tools, loaders, model_tools, training, utils
+from . import batch_attack, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, utils
 
 datasets = ['cifar10', 'cifar100', 'imagenet']
 supported_attacks = ['boundary', 'deepfool', 'fgsm']
@@ -23,7 +24,8 @@ black_box_attacks = [
     x for x in supported_attacks if x not in differentiable_attacks]
 
 supported_distance_tools = ['anti-attack']
-supported_detectors = supported_distance_tools
+supported_detectors = list(supported_distance_tools)
+supported_preprocessors = ['feature_squeezing', 'spatial_smoothing']
 
 supported_ps = ['2', 'inf']
 
@@ -294,13 +296,6 @@ def _get_num_classes(dataset):
         raise ValueError('Dataset not supported')
 
 
-def parse_detector(detector, options, failure_value=-np.Infinity):
-    if detector in supported_distance_tools:
-        return detectors.DistanceDetector(parse_distance_tool(detector, options, failure_value))
-    else:
-        raise ValueError('Detector not supported.')
-
-
 def parse_attack_constructor(attack_name, p):
     if attack_name == 'deepfool':
         if p == 2:
@@ -329,9 +324,8 @@ def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
         # We treat failures as -Infinity because failed
         # detection means that the sample is likely adversarial
 
-        batch_worker = batch_attack.TorchWorker(torch_model)
-
         if parallelize_anti_attack:
+            batch_worker = batch_attack.TorchWorker(torch_model)
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
                                                                anti_attack_p, failure_value, batch_worker, attack_workers)
         else:
@@ -341,6 +335,22 @@ def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
         raise ValueError('Distance tool not supported.')
 
     return distance_tool
+
+
+def parse_detector(detector, options, failure_value=-np.Infinity):
+    if detector in supported_distance_tools:
+        return detectors.DistanceDetector(parse_distance_tool(detector, options, failure_value))
+    else:
+        raise ValueError('Detector not supported.')
+
+
+def parse_preprocessor(preprocessor, options):
+    if preprocessor == 'spatial_smoothing':
+        return art.defences.SpatialSmoothing(options['spatial_smoothing_window'])
+    elif preprocessor == 'feature_squeezing':
+        return art.defences.FeatureSqueezing(options['feature_squeezing_bit_depth'])
+    else:
+        raise ValueError('Preprocessor not supported.')
 
 
 def add_options(options):
@@ -538,7 +548,7 @@ def test_options(test_name):
     def _test_options(func):
         @click.option('-rp', '--results-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
                       help='The path to the CSV file where the results will be saved. If unspecified '
-                      'it defaults to \'./results/{}/$start_time$.csv\''.format(test_name))
+                      'it defaults to \'./results/{}/$dataset$ $start_time$.csv\''.format(test_name))
         @functools.wraps(func)
         def _parse_test_options(options, results_path, *args, **kwargs):
             dataset = options['dataset']
@@ -652,12 +662,56 @@ def detector_options(failure_value):
     return _detector_options
 
 
-def evasion_options(func):
-    @click.argument('threshold', type=float)
+def preprocessor_options(func):
+    @click.argument('preprocessor', type=click.Choice(supported_preprocessors))
+    @click.option('-fsbd', '--feature-squeezing-bit-depth', type=int, default=8, show_default=True,
+                  help='The bit depth of feature squeezing (only applied if preprocessor is \'feature_squeezing\').')
+    @click.option('-ssw', '--spatial-smoothing-window', type=int, default=3, show_default=True,
+                  help='The size of the sliding window for spatial smoothing (only applied if preprocessor is \'spatial_smoothing\').')
     @functools.wraps(func)
-    def _parse_evasion_options(parsed_detector_options, threshold, *args, **kwargs):
-        parsed_evasion_option = dict(parsed_detector_options)
-        parsed_evasion_option['threshold'] = threshold
+    def _parse_preprocessor_options(options, preprocessor, feature_squeezing_bit_depth, spatial_smoothing_window, *args, **kwargs):
 
-        return func(parsed_evasion_option, *args, **kwargs)
-    return _parse_evasion_options
+        parsed_preprocessor_options = dict(options)
+
+        parsed_preprocessor_options['feature_squeezing_bit_depth'] = feature_squeezing_bit_depth
+        parsed_preprocessor_options['spatial_smoothing_window'] = spatial_smoothing_window
+        # preprocessor must be parsed last
+        preprocessor = parse_preprocessor(
+            preprocessor, parsed_preprocessor_options)
+        parsed_preprocessor_options['preprocessor'] = preprocessor
+        return func(parsed_preprocessor_options, *args, **kwargs)
+
+    return _parse_preprocessor_options
+
+
+def adversarial_dataset_options(func):
+    @click.argument('adversarial_dataset_path', type=click.Path(exists=True, file_okay=True, dir_okay=True))
+    @click.option('--max-adversarial_batches', '-mab', type=click.IntRange(1, None), default=None,
+                  help='The maximum number of batches. If unspecified, no batch limiting is applied.')
+    @functools.wraps(func)
+    def _parse_adversarial_dataset_options(options, adversarial_dataset_path, max_adversarial_batches, *args, **kwargs):
+        batch_size = options['batch_size']
+        shuffle = options['shuffle']
+
+        adversarial_list, adversarial_generation_success_rate = utils.load_zip(
+            adversarial_dataset_path)
+
+        adversarial_loader = loaders.ListLoader(
+            adversarial_list, batch_size, shuffle)
+
+        if max_adversarial_batches is not None:
+            if (not options['shuffle']) and (not options['no_shuffle_warning']):
+                logger.warning('You are limiting the number of adversarial batches, but you aren\'t applying any shuffling. '
+                               'This means that the last parts of your adversarial dataset will be never used. You can disable this '
+                               'warning by passing \'--no-shuffle-warning\' (alias: \'-nsw\').')
+
+            adversarial_loader = loaders.MaxBatchLoader(
+                adversarial_loader, max_adversarial_batches)
+
+        parsed_adversarial_dataset_options = dict(options)
+        parsed_adversarial_dataset_options['adversarial_loader'] = adversarial_loader
+        parsed_adversarial_dataset_options['adversarial_generation_success_rate'] = adversarial_generation_success_rate
+
+        return func(parsed_adversarial_dataset_options, *args, **kwargs)
+
+    return _parse_adversarial_dataset_options

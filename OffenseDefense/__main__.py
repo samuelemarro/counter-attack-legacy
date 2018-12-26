@@ -9,6 +9,7 @@ import torch
 import OffenseDefense
 import OffenseDefense.attacks as attacks
 import OffenseDefense.batch_attack as batch_attack
+import OffenseDefense.defenses as defenses
 import OffenseDefense.detectors as detectors
 import OffenseDefense.distance_tools as distance_tools
 import OffenseDefense.loaders as loaders
@@ -88,7 +89,8 @@ def attack(options, saved_dataset_path, no_test_warning):
                        info=info, header=header, transpose=True)
 
     if save_adversarials:
-        dataset = list(zip(adversarials, adversarial_ground_truths))
+        dataset = list(
+            zip(adversarials, adversarial_ground_truths)), success_rate
         utils.save_zip(dataset, saved_dataset_path)
 
 
@@ -124,23 +126,22 @@ def accuracy(options, top_ks):
 
 @main.command()
 @parsing.global_options
-@parsing.dataset_options('train')
+@parsing.dataset_options('test')
 @parsing.pretrained_model_options
 @parsing.test_options('detect')
 @parsing.parallelization_options
 @parsing.detector_options(-np.Infinity)
-@click.argument('adversarial_dataset_path', type=click.Path(exists=True, file_okay=True, dir_okay=True))
-@click.option('--max-adversarial_batches', '-mab', type=click.IntRange(1, None), default=None,
-              help='The maximum number of batches. If unspecified, no batch limiting is applied.')
+@parsing.adversarial_dataset_options
 @click.option('-sdp', '--saved_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
               help='The path to the .zip file where the scores will be saved with their corresponding images. If unspecified, no scores will be saved.')
 @click.option('--no-test-warning', '-ntw', is_flag=True,
               help='Disables the warning for running this test on the test set.')
-def detect(options, adversarial_dataset_path, max_adversarial_batches, saved_dataset_path, no_test_warning):
+def detect(options, saved_dataset_path, no_test_warning):
     """
     Uses a detector to identify adversarial samples.
     """
 
+    adversarial_loader = options['adversarial_loader']
     batch_size = options['batch_size']
     command = options['command']
     dataset_type = options['dataset_type']
@@ -150,20 +151,6 @@ def detect(options, adversarial_dataset_path, max_adversarial_batches, saved_dat
     results_path = options['results_path']
     shuffle = options['shuffle']
     torch_model = options['torch_model']
-
-    adversarial_list = list(utils.load_zip(adversarial_dataset_path))
-
-    adversarial_loader = loaders.ListLoader(
-        adversarial_list, batch_size, shuffle)
-
-    if max_adversarial_batches is not None:
-        if (not options['shuffle']) and (not options['no_shuffle_warning']):
-            logger.warning('You are limiting the number of adversarial batches, but you aren\'t applying any shuffling. '
-                           'This means that the last parts of your adversarial dataset will be never used. You can disable this '
-                           'warning by passing \'--no-shuffle-warning\' (alias: \'-nsw\').')
-
-        adversarial_loader = loaders.MaxBatchLoader(
-            adversarial_loader, max_adversarial_batches)
 
     save_scores = saved_dataset_path is not None
 
@@ -220,6 +207,91 @@ def detect(options, adversarial_dataset_path, max_adversarial_batches, saved_dat
         utils.save_zip(dataset, saved_dataset_path)
 
 
+@main.group()
+def defense():
+    pass
+
+
+@defense.group(name='detector')
+def detector_defense():
+    pass
+
+
+@detector_defense.command(name='shallow')
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.test_options('defense/detector/shallow')
+@parsing.parallelization_options
+@parsing.detector_options(-np.Infinity)
+@parsing.adversarial_dataset_options
+@click.argument('threshold', type=float)
+def shallow_detector(options, threshold):
+    adversarial_loader = options['adversarial_loader']
+    adversarial_generation_success_rate = options['adversarial_generation_success_rate']
+    detector = options['detector']
+    foolbox_model = options['foolbox_model']
+    results_path = options['results_path']
+
+    evasion_success_rate = tests.shallow_attack_test(
+        foolbox_model, adversarial_loader, detector, threshold)
+
+    success_rate = adversarial_generation_success_rate * evasion_success_rate
+
+    info = [
+        ['Adversarial Generation Success Rate', '{:2.2f}%'.format(
+            adversarial_generation_success_rate * 100.0)],
+        ['Evasion Success Rate', '{:2.2f}%'.format(
+            evasion_success_rate * 100.0)],
+        ['Final Success Rate', '{:2.2f}%'.format(success_rate * 100.0)]
+    ]
+
+    utils.save_results(results_path, info=info)
+
+
+@defense.group(name='model')
+def model_defense():
+    pass
+
+
+@defense.group(name='preprocessor')
+def preprocessor_defense(name='preprocessor'):
+    pass
+
+# TODO: batch_attack's parallelization uses the Torch Model instead of the foolbox one (which might contain the detector and the preprocessors)
+
+
+@preprocessor_defense.command(name='shallow')
+@parsing.global_options
+@parsing.pretrained_model_options
+@parsing.test_options('defense/preprocessor/shallow')
+@parsing.preprocessor_options
+@parsing.adversarial_dataset_options
+def shallow_preprocessor(options):
+    adversarial_loader = options['adversarial_loader']
+    adversarial_generation_success_rate = options['adversarial_generation_success_rate']
+    foolbox_model = options['foolbox_model']
+    results_path = options['results_path']
+    preprocessor = options['preprocessor']
+
+    defended_model = defenses.PreprocessorDefenseModel(
+        foolbox_model, preprocessor)
+
+    evasion_success_rate = tests.shallow_attack_test(
+        defended_model, adversarial_loader)
+
+    success_rate = adversarial_generation_success_rate * evasion_success_rate
+
+    info = [
+        ['Adversarial Generation Success Rate', '{:2.2f}%'.format(
+            adversarial_generation_success_rate * 100.0)],
+        ['Evasion Success Rate', '{:2.2f}%'.format(
+            evasion_success_rate * 100.0)],
+        ['Final Success Rate', '{:2.2f}%'.format(success_rate * 100.0)]
+    ]
+
+    utils.save_results(results_path, info=info)
+
+
 @main.command()
 @parsing.global_options
 @parsing.pretrained_model_options
@@ -228,7 +300,6 @@ def detect(options, adversarial_dataset_path, max_adversarial_batches, saved_dat
 @parsing.parallelization_options
 @parsing.attack_options(parsing.black_box_attacks)
 @parsing.detector_options(-np.Infinity)
-@parsing.evasion_options
 def black_box_evasion(options):
     """
     Treats the model and the detector as a black box.
@@ -251,7 +322,7 @@ def black_box_evasion(options):
 
     attack_constructor = parsing.parse_attack_constructor(attack_name, p)
     attack = attack_constructor(
-        composite_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
+        composite_model, foolbox.criteria.Misclassification() and detectors.Undetected(), distance_tools.LpDistance(p))
 
     distances, failure_count, _, _ = tests.attack_test(composite_model, loader, attack,
                                                        p, model_batch_worker, attack_workers, name='Black Box Evasion Test')
@@ -278,7 +349,6 @@ def black_box_evasion(options):
 @parsing.parallelization_options
 @parsing.attack_options(parsing.differentiable_attacks)
 @parsing.detector_options(-np.Infinity)
-@parsing.evasion_options
 def differentiable_evasion(options):
     attack_name = options['attack_name']
     model_batch_worker = options['model_batch_worker']
@@ -407,11 +477,7 @@ def train_model(options, trained_model_path):
 
 @main.command()
 @parsing.global_options
-@parsing.pretrained_model_options
-@parsing.dataset_options('train')
-@parsing.parallelization_options
 @parsing.train_options
-@parsing.detector_options(None)
 @click.option('-l', '--loss', type=click.Choice(['l1', 'l2', 'smooth_l1']), default='l2', show_default=True)
 @click.option('-tap', '--trained-approximator-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
               help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./train_approximator/$dataset$ $start_time$.pth.tar\'')
@@ -437,8 +503,6 @@ def train_approximator(options, loss, trained_approximator_path):
         loss = torch.nn.SmoothL1Loss()
     else:
         raise ValueError('Loss not supported.')
-
-    loader = loaders.DetectorLoader(loader, detector, None)
 
     training.train_torch(torch_model, loader, loss,
                          optimizer, epochs, cuda, classification=False)

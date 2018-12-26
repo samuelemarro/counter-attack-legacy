@@ -1,9 +1,10 @@
-numpy>=1.14.3
-foolbox>=1.5.0
-torchvision>=0.2.1
-pytest>=4.0.0
-scikit_learn>=0.20.0
-matplotlib>=2.0.2
-randomgen>=1.15.1
+Adversarial-Robustness-Toolbox>=0.4.0
 click>=7.0
+foolbox>=1.5.0
+matplotlib>=2.0.2
+numpy>=1.14.3
+pytest>=4.0.0
+randomgen>=1.15.1
 progress>=1.4
+scikit_learn>=0.20.0
+torchvision>=0.2.1
