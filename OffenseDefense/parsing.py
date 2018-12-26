@@ -407,7 +407,7 @@ def global_options(func):
 
         logging.getLogger('OffenseDefense').setLevel(verbosity.upper())
 
-        parsed_common_options = {
+        common_options = {
             'batch_size': batch_size,
             'command': command,
             'config_path': config_path,
@@ -420,7 +420,7 @@ def global_options(func):
             'start_time': start_time
         }
 
-        return func(parsed_common_options, *args, **kwargs)
+        return func(common_options, *args, **kwargs)
     return _parse_global_options
 
 
@@ -452,12 +452,12 @@ def pretrained_model_options(func):
         foolbox_model = foolbox.models.PyTorchModel(
             torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
 
-        parsed_pretrained_model_options = dict(options)
+        pretrained_model_options = dict(options)
 
-        parsed_pretrained_model_options['foolbox_model'] = foolbox_model
-        parsed_pretrained_model_options['torch_model'] = torch_model
+        pretrained_model_options['foolbox_model'] = foolbox_model
+        pretrained_model_options['torch_model'] = torch_model
 
-        return func(parsed_pretrained_model_options, *args, **kwargs)
+        return func(pretrained_model_options, *args, **kwargs)
     return _parse_pretrained_model_options
 
 
@@ -495,11 +495,11 @@ def dataset_options(recommended):
                 if max_batches is not None:
                     loader = loaders.MaxBatchLoader(loader, max_batches)
 
-                parsed_dataset_options = dict(options)
-                parsed_dataset_options['dataset_type'] = dataset_type
-                parsed_dataset_options['loader'] = loader
+                dataset_options = dict(options)
+                dataset_options['dataset_type'] = dataset_type
+                dataset_options['loader'] = loader
 
-                return func(parsed_dataset_options, *args, **kwargs)
+                return func(dataset_options, *args, **kwargs)
         return _parse_dataset_options
     return _dataset_options
 
@@ -528,19 +528,19 @@ def train_options(func):
         else:
             raise ValueError('Optimizer not supported.')
 
-        parsed_train_options = dict(options)
+        train_options = dict(options)
 
-        parsed_train_options['adam_betas'] = adam_betas
-        parsed_train_options['adam_epsilon'] = adam_epsilon
-        parsed_train_options['epochs'] = epochs
-        parsed_train_options['learning_rate'] = learning_rate
-        parsed_train_options['optimizer'] = optimizer
-        parsed_train_options['sgd_dampening'] = sgd_dampening
-        parsed_train_options['sgd_momentum'] = sgd_momentum
-        parsed_train_options['sgd_nesterov'] = sgd_nesterov
-        parsed_train_options['weight_decay'] = weight_decay
+        train_options['adam_betas'] = adam_betas
+        train_options['adam_epsilon'] = adam_epsilon
+        train_options['epochs'] = epochs
+        train_options['learning_rate'] = learning_rate
+        train_options['optimizer'] = optimizer
+        train_options['sgd_dampening'] = sgd_dampening
+        train_options['sgd_momentum'] = sgd_momentum
+        train_options['sgd_nesterov'] = sgd_nesterov
+        train_options['weight_decay'] = weight_decay
 
-        return func(parsed_train_options, *args, **kwargs)
+        return func(train_options, *args, **kwargs)
     return _parse_train_options
 
 
@@ -558,10 +558,10 @@ def test_options(test_name):
                 results_path = _get_results_default_path(
                     test_name, dataset, start_time)
 
-            parsed_test_options = dict(options)
-            parsed_test_options['results_path'] = results_path
+            test_options = dict(options)
+            test_options['results_path'] = results_path
 
-            return func(parsed_test_options, *args, **kwargs)
+            return func(test_options, *args, **kwargs)
         return _parse_test_options
     return _test_options
 
@@ -578,12 +578,12 @@ def parallelization_options(func):
         enable_attack_parallelization = not no_attack_parallelization
         model_batch_worker = batch_attack.TorchWorker(torch_model)
 
-        parsed_parallelization_options = dict(options)
-        parsed_parallelization_options['attack_workers'] = attack_workers
-        parsed_parallelization_options['enable_attack_parallelization'] = enable_attack_parallelization
-        parsed_parallelization_options['model_batch_worker'] = model_batch_worker
+        parallelization_options = dict(options)
+        parallelization_options['attack_workers'] = attack_workers
+        parallelization_options['enable_attack_parallelization'] = enable_attack_parallelization
+        parallelization_options['model_batch_worker'] = model_batch_worker
 
-        return func(parsed_parallelization_options, *args, **kwargs)
+        return func(parallelization_options, *args, **kwargs)
     return parse_parallelization_options
 
 
@@ -606,16 +606,16 @@ def attack_options(attacks):
 
             parallelize_attack = enable_attack_parallelization and attack in parallelizable_attacks
 
-            parsed_attack_options = dict(options)
+            attack_options = dict(options)
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
-            parsed_attack_options['attack_name'] = attack
-            parsed_attack_options['enable_attack_parallelization'] = enable_attack_parallelization
-            parsed_attack_options['p'] = p
-            parsed_attack_options['parallelize_attack'] = parallelize_attack
-            parsed_attack_options['loader'] = loader
+            attack_options['attack_name'] = attack
+            attack_options['enable_attack_parallelization'] = enable_attack_parallelization
+            attack_options['p'] = p
+            attack_options['parallelize_attack'] = parallelize_attack
+            attack_options['loader'] = loader
 
-            return func(parsed_attack_options, *args, **kwargs)
+            return func(attack_options, *args, **kwargs)
         return _parse_attack_options
     return _attack_options
 
@@ -646,18 +646,18 @@ def detector_options(failure_value):
                 foolbox_model, foolbox.criteria.Misclassification(),
                 distance_tools.LpDistance(anti_attack_p))
 
-            parsed_detector_options = dict(options)
+            detector_options = dict(options)
 
-            parsed_detector_options['anti_attack'] = anti_attack
-            parsed_detector_options['anti_attack_p'] = anti_attack_p
-            parsed_detector_options['parallelize_anti_attack'] = parallelize_anti_attack
+            detector_options['anti_attack'] = anti_attack
+            detector_options['anti_attack_p'] = anti_attack_p
+            detector_options['parallelize_anti_attack'] = parallelize_anti_attack
 
             # detector must be parsed last
             detector = parse_detector(
-                detector, parsed_detector_options, failure_value)
-            parsed_detector_options['detector'] = detector
+                detector, detector_options, failure_value)
+            detector_options['detector'] = detector
 
-            return func(parsed_detector_options, *args, **kwargs)
+            return func(detector_options, *args, **kwargs)
         return _parse_detector_options
     return _detector_options
 
@@ -671,15 +671,15 @@ def preprocessor_options(func):
     @functools.wraps(func)
     def _parse_preprocessor_options(options, preprocessor, feature_squeezing_bit_depth, spatial_smoothing_window, *args, **kwargs):
 
-        parsed_preprocessor_options = dict(options)
+        preprocessor_options = dict(options)
 
-        parsed_preprocessor_options['feature_squeezing_bit_depth'] = feature_squeezing_bit_depth
-        parsed_preprocessor_options['spatial_smoothing_window'] = spatial_smoothing_window
+        preprocessor_options['feature_squeezing_bit_depth'] = feature_squeezing_bit_depth
+        preprocessor_options['spatial_smoothing_window'] = spatial_smoothing_window
         # preprocessor must be parsed last
         preprocessor = parse_preprocessor(
-            preprocessor, parsed_preprocessor_options)
-        parsed_preprocessor_options['preprocessor'] = preprocessor
-        return func(parsed_preprocessor_options, *args, **kwargs)
+            preprocessor, preprocessor_options)
+        preprocessor_options['preprocessor'] = preprocessor
+        return func(preprocessor_options, *args, **kwargs)
 
     return _parse_preprocessor_options
 
@@ -708,10 +708,10 @@ def adversarial_dataset_options(func):
             adversarial_loader = loaders.MaxBatchLoader(
                 adversarial_loader, max_adversarial_batches)
 
-        parsed_adversarial_dataset_options = dict(options)
-        parsed_adversarial_dataset_options['adversarial_loader'] = adversarial_loader
-        parsed_adversarial_dataset_options['adversarial_generation_success_rate'] = adversarial_generation_success_rate
+        adversarial_dataset_options = dict(options)
+        adversarial_dataset_options['adversarial_loader'] = adversarial_loader
+        adversarial_dataset_options['adversarial_generation_success_rate'] = adversarial_generation_success_rate
 
-        return func(parsed_adversarial_dataset_options, *args, **kwargs)
+        return func(adversarial_dataset_options, *args, **kwargs)
 
     return _parse_adversarial_dataset_options
