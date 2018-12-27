@@ -29,6 +29,7 @@ def main(*args):
 
 @main.command()
 @parsing.global_options
+@parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('attack')
@@ -96,6 +97,7 @@ def attack(options, saved_dataset_path, no_test_warning):
 
 @main.command()
 @parsing.global_options
+@parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('accuracy')
@@ -127,6 +129,7 @@ def accuracy(options, top_ks):
 @main.command()
 @parsing.global_options
 @parsing.dataset_options('test')
+@parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('detect')
 @parsing.parallelization_options
@@ -219,6 +222,7 @@ def detector_defense():
 
 @detector_defense.command(name='shallow')
 @parsing.global_options
+@parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/detector/shallow')
 @parsing.parallelization_options
@@ -253,6 +257,35 @@ def model_defense():
     pass
 
 
+@model_defense.command(name='shallow')
+@parsing.global_options
+@parsing.custom_model_options
+@parsing.test_options('defense/model/shallow')
+@parsing.adversarial_dataset_options
+def shallow_model(options):
+    adversarial_loader = options['adversarial_loader']
+    adversarial_generation_success_rate = options['adversarial_generation_success_rate']
+    device = options['device']
+    foolbox_model = options['foolbox_model']
+    num_classes = options['num_classes']
+    results_path = options['results_path']
+
+    evasion_success_rate = tests.shallow_attack_test(
+        foolbox_model, adversarial_loader)
+
+    success_rate = adversarial_generation_success_rate * evasion_success_rate
+
+    info = [
+        ['Adversarial Generation Success Rate', '{:2.2f}%'.format(
+            adversarial_generation_success_rate * 100.0)],
+        ['Evasion Success Rate', '{:2.2f}%'.format(
+            evasion_success_rate * 100.0)],
+        ['Final Success Rate', '{:2.2f}%'.format(success_rate * 100.0)]
+    ]
+
+    utils.save_results(results_path, info=info)
+
+
 @defense.group(name='preprocessor')
 def preprocessor_defense(name='preprocessor'):
     pass
@@ -262,6 +295,7 @@ def preprocessor_defense(name='preprocessor'):
 
 @preprocessor_defense.command(name='shallow')
 @parsing.global_options
+@parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/shallow')
 @parsing.preprocessor_options
@@ -294,6 +328,7 @@ def shallow_preprocessor(options):
 
 @main.command()
 @parsing.global_options
+@parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('black_box_evasion')
@@ -343,6 +378,7 @@ def black_box_evasion(options):
 
 @main.command()
 @parsing.global_options
+@parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('differentiable_evasion')
@@ -391,6 +427,7 @@ def differentiable_evasion(options):
 
 @main.command()
 @parsing.global_options
+@parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('parallelization')
@@ -472,7 +509,7 @@ def train_model(options, trained_model_path):
     training.train_torch(torch_model, loader, loss,
                          optimizer, epochs, cuda, classification=True)
 
-    model_tools.save_model(torch_model, trained_model_path)
+    model_tools.save_state_dict(torch_model, trained_model_path)
 
 
 @main.command()
@@ -507,7 +544,7 @@ def train_approximator(options, loss, trained_approximator_path):
     training.train_torch(torch_model, loader, loss,
                          optimizer, epochs, cuda, classification=False)
 
-    model_tools.save_model(torch_model, trained_approximator_path)
+    model_tools.save_state_dict(torch_model, trained_approximator_path)
 
 
 if __name__ == '__main__':

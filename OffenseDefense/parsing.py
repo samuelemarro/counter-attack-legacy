@@ -172,7 +172,7 @@ def _download_pretrained_model(dataset, path):
             'config.ini', path, 'model_links', dataset)
     elif dataset == 'imagenet':
         model = torchvision.models.densenet161(pretrained=True)
-        model_tools.save_model(model, path)
+        model_tools.save_state_dict(model, path)
     else:
         raise ValueError('Dataset not supported.')
 
@@ -212,14 +212,16 @@ def _get_torch_model(dataset: str) -> torch.nn.Module:
     return model
 
 
-def _get_pretrained_torch_model(dataset: str, path: str, download: bool) -> torch.nn.Module:
+def _get_pretrained_torch_model(dataset: str, base_model: torch.nn.Module, path: str, download: bool) -> torch.nn.Module:
     """Returns the pretrained Torch model for a given dataset.
 
     Parameters
     ----------
     dataset : str
         The name of the dataset. Currently supported values
-        are ['cifar10', 'cifar100', 'imagenet']
+        are ['cifar10', 'cifar100', 'imagenet'].
+    base_model : torch.nn.Model
+        The model on which the pretrained weights will be applied.
     path : str
         The path to the file where the pretrained model is
         stored (or will be downloaded).
@@ -246,7 +248,7 @@ def _get_pretrained_torch_model(dataset: str, path: str, download: bool) -> torc
             raise RuntimeError(
                 'No pretrained model found: {}. Use --download-model to automatically download missing models.'.format(path))
 
-    model = model_tools.load_model(model, path, False, False)
+    model = model_tools.load_state_dict(model, path, False, False)
     return model
 
 
@@ -405,13 +407,16 @@ def global_options(func):
 
         cuda = torch.cuda.is_available() and not no_cuda
 
+        device = torch.cuda.current_device() if cuda else 'cpu'
+
         logging.getLogger('OffenseDefense').setLevel(verbosity.upper())
 
-        common_options = {
+        global_options = {
             'batch_size': batch_size,
             'command': command,
             'config_path': config_path,
             'cuda': cuda,
+            'device': device,
             'dataset': dataset,
             'max_batches': max_batches,
             'no_shuffle_warning': no_shuffle_warning,
@@ -420,25 +425,62 @@ def global_options(func):
             'start_time': start_time
         }
 
-        return func(common_options, *args, **kwargs)
+        return func(global_options, *args, **kwargs)
     return _parse_global_options
 
 
+def standard_model_options(func):
+    @functools.wraps(func)
+    def _parse_standard_model_options(options, *args, **kwargs):
+        cuda = options['cuda']
+        dataset = options['dataset']
+        num_classes = options['num_classes']
+
+        base_model = _get_torch_model(dataset)
+
+        standard_model_options = dict(options)
+        standard_model_options['base_model'] = base_model
+
+        return func(standard_model_options, *args, **kwargs)
+    return _parse_standard_model_options
+
+
 def pretrained_model_options(func):
+    """
+    Loads the pretrained weights, adds the preprocessing and saves
+    the model in foolbox and torch format.
+
+    Requires:
+        base_model
+        cuda
+        dataset
+        device
+        num_classes
+
+    Adds:
+        foolbox_model
+        torch_model
+
+    Mutually exclusive with:
+        custom_model_options
+    """
+
     @click.option('-mp', '--model-path', type=click.Path(file_okay=True, dir_okay=False), default=None)
     @click.option('-dm', '--download-model', is_flag=True,
                   help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
     @functools.wraps(func)
     def _parse_pretrained_model_options(options, model_path, download_model, *args, **kwargs):
+        base_model = options['base_model']
         cuda = options['cuda']
         dataset = options['dataset']
+        device = options['device']
         num_classes = options['num_classes']
 
         if model_path is None:
             model_path = './pretrained_models/' + dataset + '.pth.tar'
 
         torch_model = _get_pretrained_torch_model(
-            dataset, model_path, download_model)
+            dataset, base_model, model_path, download_model)
         torch_model = torch.nn.Sequential(
             _get_preprocessing(dataset), torch_model)
 
@@ -446,8 +488,6 @@ def pretrained_model_options(func):
 
         if cuda:
             torch_model.cuda()
-
-        device = torch.cuda.current_device() if cuda else 'cpu'
 
         foolbox_model = foolbox.models.PyTorchModel(
             torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
@@ -459,6 +499,25 @@ def pretrained_model_options(func):
 
         return func(pretrained_model_options, *args, **kwargs)
     return _parse_pretrained_model_options
+
+
+def custom_model_options(func):
+    @click.argument('custom_model_path', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+    @functools.wraps(func)
+    def _parse_custom_model_options(options, custom_model_path, *args, **kwargs):
+        device = options['device']
+        num_classes = options['num_classes']
+
+        torch_model = torch.load_model(custom_model_path)
+        foolbox_model = foolbox.models.PyTorchModel(
+            torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
+
+        custom_model_options = dict(options)
+        custom_model_options['foolbox_model'] = foolbox_model
+        custom_model_options['torch_model'] = torch_model
+
+        return func(custom_model_options, *args, **kwargs)
+    return _parse_custom_model_options
 
 
 def dataset_options(recommended):

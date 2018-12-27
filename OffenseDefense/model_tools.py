@@ -22,7 +22,7 @@ class Preprocessing(torch.nn.Module):
         return (input - means) / stds
 
 
-def load_model(base_model, path, training_model, data_parallel):
+def load_state_dict(base_model, path, training_model, data_parallel):
     if data_parallel:
         model = torch.nn.DataParallel(base_model)
     else:
@@ -41,6 +41,6 @@ def load_model(base_model, path, training_model, data_parallel):
     return model
 
 
-def save_model(model, path):
+def save_state_dict(model, path):
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), path)
