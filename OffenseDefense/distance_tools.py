@@ -57,23 +57,22 @@ class AdversarialDistance(DistanceTool):
         batch_predictions = self.foolbox_model.batch_predictions(images)
         labels = np.argmax(batch_predictions, axis=1)
 
-        adversarial_filter = batch_attack.get_adversarials(self.foolbox_model,
+        adversarials, _, _ = batch_attack.get_adversarials(self.foolbox_model,
                                                            images,
                                                            labels,
                                                            self.attack,
                                                            False,
-                                                           False,
                                                            batch_worker=self.batch_worker,
                                                            num_workers=self.num_workers)
 
-        assert len(adversarial_filter['adversarials']) == len(images)
+        assert len(adversarials) == len(images)
 
         distances = [self.failure_value] * len(images)
 
         # Fill in the distances computed by the attack, while leaving the failed attacks with failure_value
 
         successful_adversarial_indices = [i for i in range(
-            len(images)) if adversarial_filter['adversarials'][i] is not None]
+            len(images)) if adversarials[i] is not None]
 
         # If there are no successful adversarial samples, return early
         if len(successful_adversarial_indices) == 0:
@@ -83,8 +82,8 @@ class AdversarialDistance(DistanceTool):
             successful_adversarial_indices)
 
         successful_adversarials = [
-            adversarial_filter['adversarials'][i] for i in successful_adversarial_indices]
-        successful_images = [adversarial_filter['images'][i]
+            adversarials[i] for i in successful_adversarial_indices]
+        successful_images = [images[i]
                              for i in successful_adversarial_indices]
         successful_adversarials = np.array(successful_adversarials)
         successful_images = np.array(successful_images)

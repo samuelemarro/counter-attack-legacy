@@ -58,22 +58,24 @@ def attack_test(foolbox_model: foolbox.models.Model,
     adversarial_ground_truths = [] if save_adversarials else None
 
     for images, labels in _get_iterator(name, loader):
-        adversarial_filter = batch_attack.get_adversarials(
-            foolbox_model, images, labels, attack, True, True, batch_worker=batch_worker, num_workers=num_workers)
-        batch_adversarials = adversarial_filter['adversarials']
+        correct_images, correct_labels = batch_attack.get_correct_samples(
+            foolbox_model, images, labels)
 
-        success_rate.update(1, len(batch_adversarials))
-        success_rate.update(0, len(images) - len(batch_adversarials))
+        successful_adversarials, successful_images, successful_labels = batch_attack.get_adversarials(
+            foolbox_model, correct_images, correct_labels, attack, True, batch_worker, num_workers)
+
+        success_rate.update(1, len(successful_adversarials))
+        success_rate.update(0, len(correct_images) -
+                            len(successful_adversarials))
 
         # If there are no successful adversarials, don't update the distances or the adversarials
-        if len(batch_adversarials) > 0:
+        if len(successful_adversarials) > 0:
             distances += list(utils.lp_distance(
-                adversarial_filter['adversarials'], adversarial_filter['images'], p, True))
+                successful_adversarials, successful_images, p, True))
 
             if save_adversarials:
-                adversarials += list(batch_adversarials)
-                adversarial_ground_truths += list(
-                    adversarial_filter['image_labels'])
+                adversarials += list(successful_adversarials)
+                adversarial_ground_truths += list(successful_labels)
 
         failure_count = success_rate.count - \
             success_rate.sum
@@ -180,29 +182,30 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
     parallel_distances = []
 
     for images, labels in _get_iterator(name, loader):
+        correct_images, correct_labels = batch_attack.get_correct_samples(
+            foolbox_model, images, labels)
+
         # Run the parallel attack
-        parallel_adversarial_filter = batch_attack.get_adversarials(
-            foolbox_model, images, labels, attack, True, True, batch_worker=batch_worker, num_workers=num_workers)
-        parallel_adversarials = parallel_adversarial_filter['adversarials']
+        parallel_adversarials, parallel_images, _ = batch_attack.get_adversarials(
+            foolbox_model, correct_images, correct_labels, attack, True, batch_worker=batch_worker, num_workers=num_workers)
 
         parallel_success_rate.update(1, len(parallel_adversarials))
         parallel_success_rate.update(
-            0, len(images) - len(parallel_adversarials))
+            0, len(correct_images) - len(parallel_adversarials))
 
         parallel_distances += list(utils.lp_distance(
-            parallel_adversarial_filter['adversarials'], parallel_adversarial_filter['images'], p, True))
+            parallel_adversarials, parallel_images, p, True))
 
         # Run the standard attack
-        standard_adversarial_filter = batch_attack.get_adversarials(
-            foolbox_model, images, labels, attack, True, True)
-        standard_adversarials = standard_adversarial_filter['adversarials']
+        standard_adversarials, standard_images, _ = batch_attack.get_adversarials(
+            foolbox_model, correct_images, correct_labels, attack, True)
 
         standard_success_rate.update(1, len(standard_adversarials))
         standard_success_rate.update(
-            0, len(images) - len(standard_adversarials))
+            0, len(correct_images) - len(standard_adversarials))
 
         standard_distances += list(utils.lp_distance(
-            standard_adversarial_filter['adversarials'], standard_adversarial_filter['images'], p, True))
+            standard_adversarials, standard_images, p, True))
 
         # Compute the statistics, treating failures as samples with distance=Infinity
         standard_failure_count = standard_success_rate.count - standard_success_rate.sum
@@ -212,6 +215,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
             standard_distances, standard_failure_count)
         parallel_average_distance, parallel_median_distance, _, parallel_adjusted_median_distance = utils.distance_statistics(
             parallel_distances, parallel_failure_count)
+
         average_distance_difference = (
             parallel_average_distance - standard_average_distance) / standard_average_distance
         median_distance_difference = (

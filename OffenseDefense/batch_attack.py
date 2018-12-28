@@ -169,7 +169,7 @@ def get_correct_samples(foolbox_model: foolbox.models.PyTorchModel,
 
     _filter.filter(correctly_classified, 'successful_classification')
 
-    return _filter
+    return _filter['images'], _filter['image_labels']
 
 
 """
@@ -184,22 +184,12 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
                      images: np.ndarray,
                      labels: np.ndarray,
                      adversarial_attack: foolbox.attacks.Attack,
-                     remove_misclassified: bool,
                      remove_failed: bool,
                      batch_worker: batch_processing.BatchWorker = None,
                      num_workers: int = 50):
-    if remove_misclassified:
-        _filter = get_correct_samples(foolbox_model, images, labels)
-        # If there are no correctly classified samples, return early
-        if len(_filter['images']) == 0:
-            _filter.empty()
-            logger.warning('No samples were classified correctly.')
-            return _filter
-
-    else:
-        _filter = utils.Filter()
-        _filter['images'] = images
-        _filter['image_labels'] = labels
+    _filter = utils.Filter()
+    _filter['images'] = images
+    _filter['image_labels'] = labels
 
     if batch_worker is not None:
         _filter['adversarials'] = run_batch_attack(foolbox_model,
@@ -230,26 +220,4 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
         # Convert to Numpy array after the failed samples have been removed
         _filter['adversarials'] = np.array(_filter['adversarials'])
 
-        _filter['adversarial_predictions'] = foolbox_model.batch_predictions(
-            _filter['adversarials'])
-        _filter['adversarial_labels'] = np.argmax(
-            _filter['adversarial_predictions'], axis=1)
-    else:
-        _filter['adversarial_predictions'] = [
-            None] * len(_filter['adversarials'])
-        _filter['adversarial_labels'] = [None] * len(_filter['adversarials'])
-
-        # If there are no successful attacks, don't get the predictions and the labels
-        if len(successful_adversarial_indices) > 0:
-            successful_adversarials = [_filter['adversarials'][i]
-                                       for i in successful_adversarial_indices]
-            successful_adversarials = np.array(successful_adversarials)
-            adversarial_batch_predictions = foolbox_model.batch_predictions(
-                successful_adversarials)
-
-            for i, original_index in enumerate(successful_adversarial_indices):
-                _filter['adversarial_predictions'][original_index] = adversarial_batch_predictions[i]
-                _filter['adversarial_labels'][original_index] = np.argmax(
-                    _filter['adversarial_predictions'][original_index])
-
-    return _filter
+    return _filter['adversarials'], _filter['images'], _filter['image_labels']
