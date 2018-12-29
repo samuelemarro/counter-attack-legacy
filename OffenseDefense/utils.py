@@ -1,17 +1,21 @@
-import gzip
-import pickle
 import collections
 import configparser
 import csv
 import datetime
-import json
-import pathlib
+import gzip
 import itertools
+import json
+import logging
+import pathlib
+import pickle
 import urllib.request
 from typing import Tuple
 
 import numpy as np
 import sklearn.metrics as metrics
+
+
+logger = logging.getLogger(__name__)
 
 
 class AverageMeter(object):
@@ -247,7 +251,7 @@ def download_from_config(config_path, download_path, link_section, link_name):
     except IOError:
         raise IOError('Could not read the configuration file.')
     try:
-        print('Downloading from {}'.format(download_link))
+        logger.info('Downloading from {}'.format(download_link))
         download(download_link, download_path)
     except IOError as e:
         raise IOError(

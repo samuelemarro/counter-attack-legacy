@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 
 
 class TorchWorker(batch_processing.BatchWorker):
-    """A BatchWorker that wraps a Torch model.
+    """
+    A BatchWorker that wraps a Torch model (with autograd support).
     """
 
     def __init__(self,
@@ -20,7 +21,7 @@ class TorchWorker(batch_processing.BatchWorker):
         Parameters
         ----------
         torch_model : torch.nn.Module
-            The Torch model that will be used to perform the predictions.
+            The Torch model that will be used to perform the predictions and compute the gradients.
 
         """
 
@@ -55,14 +56,39 @@ class TorchWorker(batch_processing.BatchWorker):
         return zip(outputs, grads)
 
 
+class FoolboxWorker(batch_processing.BatchWorker):
+    """
+    A BatchWorker that wraps a Foolbox model.
+    """
+
+    def __init__(self,
+                 foolbox_model: foolbox.models.Model):
+        """Initializes the TorchWorker.
+
+        Parameters
+        ----------
+        foolbox_model : torch.nn.Module
+            The foolbox model that will be used to perform the predictions.
+
+        """
+
+        self.foolbox_model = foolbox_model
+
+    def __call__(self, inputs):
+        images = np.array(inputs)
+        outputs = self.foolbox_model.batch_predictions(images)
+        return outputs
+
+
 class QueueAttackWorker(batch_processing.ThreadWorker):
     """A ThreadWorker that supports attacking samples in a queue-like
-    fashion. Useful for situations where the input_queue is bigger than
-    the model can support.
+    fashion. Useful for situations where the batch size is bigger than
+    what the model can support.
     """
 
     def __init__(self,
                  attack: foolbox.attacks.Attack,
+                 gradient: bool,
                  foolbox_model: foolbox.models.Model,
                  input_queue: queue.Queue):
         """Initializes the QueueAttackWorker.
@@ -71,6 +97,8 @@ class QueueAttackWorker(batch_processing.ThreadWorker):
         ----------
         attack : foolbox.attacks.Attack
             The attack that will be used to find adversarial samples.
+        gradient : bool
+            Whether to use gradient computation.
         foolbox_model : foolbox.models.Model
             The model that will be attacked.
         input_queue : queue.Queue
@@ -80,15 +108,17 @@ class QueueAttackWorker(batch_processing.ThreadWorker):
         """
 
         self.attack = attack
+        self.gradient = gradient
         self.foolbox_model = foolbox_model
         self.input_queue = input_queue
 
     def __call__(self, pooler, return_queue):
-        parallel_model = ParallelModel(pooler,
-                                       self.foolbox_model,
-                                       self.foolbox_model.bounds(),
-                                       self.foolbox_model.channel_axis(),
-                                       self.foolbox_model._preprocessing)
+        if self.gradient:
+            parallel_model = DifferentiableParallelModel(
+                pooler, self.foolbox_model)
+        else:
+            parallel_model = ParallelModel(pooler,
+                                           self.foolbox_model)
         while True:
             try:
                 i, (image, label) = self.input_queue.get(timeout=1e-2)
@@ -106,33 +136,34 @@ class QueueAttackWorker(batch_processing.ThreadWorker):
                 return
 
 
-class ParallelModel(foolbox.models.DifferentiableModel):
-    def __init__(self, pooler, foolbox_model, bounds, channel_axis, preprocessing=(0, 1)):
-        super().__init__(bounds, channel_axis, preprocessing)
+class ParallelModel(foolbox.models.ModelWrapper):
+    def __init__(self, pooler, foolbox_model):
+        super().__init__(foolbox_model)
         self.pooler = pooler
-        self.foolbox_model = foolbox_model
+
+    def predictions(self, image):
+        return self.pooler.call(image)
+
+
+class DifferentiableParallelModel(foolbox.models.DifferentiableModelWrapper):
+    def __init__(self, pooler, foolbox_model):
+        super().__init__(foolbox_model)
+        self.pooler = pooler
 
     def predictions_and_gradient(self, image, label):
         return self.pooler.call((image, label))
 
-    def backward(self, gradient, image):
-        raise NotImplementedError()
 
-    def batch_predictions(self, images):
-        return self.foolbox_model.batch_predictions(images)
-
-    def num_classes(self):
-        return self.foolbox_model.num_classes()
-
-
-def run_batch_attack(foolbox_model, batch_worker, attack, images, labels, num_workers=50):
+def run_batch_attack(foolbox_model, batch_worker, attack, images, labels, num_workers):
     assert len(images) == len(labels)
 
     input_queue = queue.Queue()
     data = zip(images, labels)
 
+    gradient = isinstance(batch_worker, TorchWorker)
+
     attack_workers = [QueueAttackWorker(
-        attack, foolbox_model, input_queue) for _ in range(num_workers)]
+        attack, gradient, foolbox_model, input_queue) for _ in range(num_workers)]
 
     results = batch_processing.run_queue_threads(
         batch_worker, attack_workers, input_queue, data)
@@ -172,6 +203,23 @@ def get_correct_samples(foolbox_model: foolbox.models.PyTorchModel,
     return _filter['images'], _filter['image_labels']
 
 
+def get_approved_samples(foolbox_model: foolbox.models.PyTorchModel,
+                         images: np.ndarray,
+                         labels: np.ndarray,
+                         detector,
+                         threshold: float):
+    _filter = utils.Filter()
+    _filter['images'] = images
+    _filter['image_labels'] = labels
+
+    scores = np.array(detector.get_scores(_filter['images']))
+    approved = scores >= threshold
+    approved_indices = np.nonzero(approved)[0]
+    _filter.filter(approved_indices, name='Approved')
+
+    return _filter['images'], _filter['image_labels']
+
+
 """
 Finds the adversarial samples.
 
@@ -191,16 +239,17 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
     _filter['images'] = images
     _filter['image_labels'] = labels
 
-    if batch_worker is not None:
+    if batch_worker is None:
+        _filter['adversarials'] = run_individual_attack(
+            adversarial_attack, _filter['images'], _filter['image_labels'])
+
+    else:
         _filter['adversarials'] = run_batch_attack(foolbox_model,
                                                    batch_worker,
                                                    adversarial_attack,
                                                    _filter['images'],
                                                    _filter['image_labels'],
-                                                   num_workers=num_workers)
-    else:
-        _filter['adversarials'] = run_individual_attack(
-            adversarial_attack, _filter['images'], _filter['image_labels'])
+                                                   num_workers)
 
     successful_adversarial_indices = [i for i in range(
         len(_filter['adversarials'])) if _filter['adversarials'][i] is not None]
@@ -210,12 +259,6 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
     if remove_failed:
         _filter.filter(successful_adversarial_indices,
                        'successful_adversarial')
-
-        # If there are no successful attacks, return early
-        if len(successful_adversarial_indices) == 0:
-            logger.warning(
-                'Could not find an adversarial sample for any of the provided samples.')
-            return _filter
 
         # Convert to Numpy array after the failed samples have been removed
         _filter['adversarials'] = np.array(_filter['adversarials'])

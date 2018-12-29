@@ -51,11 +51,11 @@ def attack(options, saved_dataset_path, no_test_warning):
         Adjusted Median Distance: The median L_p distance of the adversarial samples from their original samples, treating failed attacks as samples with distance Infinity.
     """
 
-    command = options['command']
+    attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
+    command = options['command']
     dataset_type = options['dataset_type']
-    model_batch_worker = options['model_batch_worker']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     p = options['p']
@@ -66,6 +66,12 @@ def attack(options, saved_dataset_path, no_test_warning):
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
+    if attack_parallelization:
+        batch_worker = batch_attack.TorchWorker(
+            torch_model)
+    else:
+        batch_worker = None
+
     save_adversarials = saved_dataset_path is not None
 
     if dataset_type == 'test' and save_adversarials and not no_test_warning:
@@ -74,7 +80,7 @@ def attack(options, saved_dataset_path, no_test_warning):
                        '\'--no-test-warning\' (alias: \'-ntw\').')
 
     distances, failure_count, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, p,
-                                                                                          model_batch_worker, attack_workers, save_adversarials=save_adversarials)
+                                                                                          batch_worker, attack_workers, save_adversarials=save_adversarials)
 
     average_distance, median_distance, success_rate, adjusted_median_distance = utils.distance_statistics(
         distances, failure_count)
@@ -222,24 +228,39 @@ def detector_defense():
 
 @detector_defense.command(name='shallow')
 @parsing.global_options
+@parsing.dataset_options('test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/detector/shallow')
 @parsing.parallelization_options
 @parsing.detector_options(-np.Infinity)
-@parsing.adversarial_dataset_options
+@parsing.attack_options(parsing.supported_attacks)
 @click.argument('threshold', type=float)
 def shallow_detector(options, threshold):
-    adversarial_loader = options['adversarial_loader']
-    adversarial_generation_success_rate = options['adversarial_generation_success_rate']
+    attack_name = options['attack_name']
+    attack_parallelization = options['attack_parallelization']
+    batch_worker = options['batch_worker']
     detector = options['detector']
     foolbox_model = options['foolbox_model']
+    loader = options['loader']
+    num_workers = options['num_workers']
+    p = options['p']
     results_path = options['results_path']
+    torch_model = options['torch_model']
 
-    evasion_success_rate = tests.shallow_attack_test(
-        foolbox_model, adversarial_loader, detector, threshold)
+    attack_constructor = parsing.parse_attack_constructor(attack_name, p)
+    attack = attack_constructor(
+        foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
-    success_rate = adversarial_generation_success_rate * evasion_success_rate
+    if attack_parallelization:
+        batch_worker = batch_attack.TorchWorker(torch_model)
+    else:
+        batch_worker = None
+
+    accuracy, success_rate, distances = tests.shallow_attack_test(
+        foolbox_model, loader, attack, p, detector, threshold, batch_worker, num_workers)
+
+    # TODO: Accuracy-Distortion curve (using accuracy and success rate)
 
     info = [
         ['Adversarial Generation Success Rate', '{:2.2f}%'.format(
@@ -261,17 +282,19 @@ def model_defense():
 @parsing.global_options
 @parsing.custom_model_options
 @parsing.test_options('defense/model/shallow')
-@parsing.adversarial_dataset_options
 def shallow_model(options):
-    adversarial_loader = options['adversarial_loader']
-    adversarial_generation_success_rate = options['adversarial_generation_success_rate']
     device = options['device']
     foolbox_model = options['foolbox_model']
     num_classes = options['num_classes']
     results_path = options['results_path']
+    torch_model = options['torch_model']
 
-    evasion_success_rate = tests.shallow_attack_test(
-        foolbox_model, adversarial_loader)
+    # TODO: The attacks must be generated against the undefended (pretrained) model
+
+    if attack_parallelization:
+        batch_worker = batch_attack.TorchWorker(torch_model)
+    else:
+        batch_worker = None
 
     success_rate = adversarial_generation_success_rate * evasion_success_rate
 
@@ -290,7 +313,8 @@ def shallow_model(options):
 def preprocessor_defense(name='preprocessor'):
     pass
 
-# TODO: batch_attack's parallelization uses the Torch Model instead of the foolbox one (which might contain the detector and the preprocessors)
+# TODO: Preprocessor and Model need to be attacked only on the samples that they misclassify, using their own
+# accuracies. This means that we cannot use precomputed adversarials in shallow tests
 
 
 @preprocessor_defense.command(name='shallow')
@@ -299,13 +323,17 @@ def preprocessor_defense(name='preprocessor'):
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/shallow')
 @parsing.preprocessor_options
-@parsing.adversarial_dataset_options
 def shallow_preprocessor(options):
-    adversarial_loader = options['adversarial_loader']
-    adversarial_generation_success_rate = options['adversarial_generation_success_rate']
     foolbox_model = options['foolbox_model']
     results_path = options['results_path']
     preprocessor = options['preprocessor']
+
+    if attack_parallelization:
+        batch_worker = batch_attack.TorchWorker(torch_model)
+    else:
+        batch_worker = None
+
+    # TODO: The attacks must be generated against the undefended (pretrained) model
 
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
@@ -332,7 +360,7 @@ def shallow_preprocessor(options):
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('parallelization')
-@parsing.set_parameters({'enable_attack_parallelization': True})
+@parsing.set_parameters({'attack_parallelization': True})
 @parsing.attack_options(parsing.parallelizable_attacks)
 @click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
               help='The number of parallel workers that will be used to speed up the attack.')
@@ -349,14 +377,14 @@ def parallelization(options, attack_workers):
     loader = options['loader']
     torch_model = options['torch_model']
 
-    model_batch_worker = batch_attack.TorchWorker(torch_model)
+    batch_worker = batch_attack.TorchWorker(torch_model)
 
     attack_constructor = parsing.parse_attack_constructor(attack_name, p)
     attack = attack_constructor(
         foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
 
     standard_distances, standard_failure_count, parallel_distances, parallel_failure_count = tests.parallelization_test(
-        foolbox_model, loader, attack, p, model_batch_worker, attack_workers)
+        foolbox_model, loader, attack, p, batch_worker, attack_workers)
 
     standard_average_distance, standard_median_distance, standard_success_rate, standard_adjusted_median_distance = utils.distance_statistics(
         standard_distances, standard_failure_count)

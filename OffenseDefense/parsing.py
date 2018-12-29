@@ -327,6 +327,7 @@ def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
         # detection means that the sample is likely adversarial
 
         if parallelize_anti_attack:
+            # Note: We use directly the model (without any defenses) since the anti-attack is a defense itself
             batch_worker = batch_attack.TorchWorker(torch_model)
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
                                                                anti_attack_p, failure_value, batch_worker, attack_workers)
@@ -503,12 +504,35 @@ def pretrained_model_options(func):
 
 def custom_model_options(func):
     @click.argument('custom_model_path', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+    @click.option('--preprocessing', default=None,
+                  help='The preprocessing that will be applied to the data. Supports both dataset names ({}) and '
+                  'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(','.join(datasets)))
     @functools.wraps(func)
-    def _parse_custom_model_options(options, custom_model_path, *args, **kwargs):
+    def _parse_custom_model_options(options, custom_model_path, preprocessing, *args, **kwargs):
         device = options['device']
         num_classes = options['num_classes']
 
         torch_model = torch.load_model(custom_model_path)
+
+        if preprocessing is None:
+            logger.warning('You are not applying any preprocessing to your data. '
+                           'You can specify it by passing --preprocessing DATASET '
+                           'or --preprocessing "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
+        else:
+            try:
+                if preprocessing in datasets:
+                    preprocessing = _get_preprocessing(preprocessing)
+                else:
+                    values = preprocessing.split(' ')
+                    means = float(values[0]), float(
+                        values[1]), float(values[2])
+                    stdevs = float(values[3]), float(
+                        values[4]), float(values[5])
+                    preprocessing = model_tools.Preprocessing(means, stdevs)
+            except:
+                raise click.BadOptionUsage('Invalid preprocessing format.')
+            torch_model = torch.nn.Sequential(preprocessing, torch_model)
+
         foolbox_model = foolbox.models.PyTorchModel(
             torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
 
@@ -543,22 +567,26 @@ def dataset_options(recommended):
             if data_folder is None:
                 data_folder = './data/genuine/' + dataset
 
-                train_loader, test_loader = _get_genuine_loaders(
-                    dataset, data_folder, batch_size, shuffle, loader_workers, download_dataset, config_path)
+            if dataset_type != recommended:
+                logger.warning('You are using the {} dataset. We recommend using the {} for this command.'.format(
+                    dataset_type, recommended))
 
-                if dataset_type == 'train':
-                    loader = train_loader
-                else:
-                    loader = test_loader
+            train_loader, test_loader = _get_genuine_loaders(
+                dataset, data_folder, batch_size, shuffle, loader_workers, download_dataset, config_path)
 
-                if max_batches is not None:
-                    loader = loaders.MaxBatchLoader(loader, max_batches)
+            if dataset_type == 'train':
+                loader = train_loader
+            else:
+                loader = test_loader
 
-                dataset_options = dict(options)
-                dataset_options['dataset_type'] = dataset_type
-                dataset_options['loader'] = loader
+            if max_batches is not None:
+                loader = loaders.MaxBatchLoader(loader, max_batches)
 
-                return func(dataset_options, *args, **kwargs)
+            dataset_options = dict(options)
+            dataset_options['dataset_type'] = dataset_type
+            dataset_options['loader'] = loader
+
+            return func(dataset_options, *args, **kwargs)
         return _parse_dataset_options
     return _dataset_options
 
@@ -634,13 +662,14 @@ def parallelization_options(func):
     def parse_parallelization_options(options, no_attack_parallelization, attack_workers, *args, **kwargs):
         torch_model = options['torch_model']
 
-        enable_attack_parallelization = not no_attack_parallelization
-        model_batch_worker = batch_attack.TorchWorker(torch_model)
+        attack_parallelization = not no_attack_parallelization
+
+        if not attack_parallelization:
+            attack_workers = 0
 
         parallelization_options = dict(options)
         parallelization_options['attack_workers'] = attack_workers
-        parallelization_options['enable_attack_parallelization'] = enable_attack_parallelization
-        parallelization_options['model_batch_worker'] = model_batch_worker
+        parallelization_options['attack_parallelization'] = attack_parallelization
 
         return func(parallelization_options, *args, **kwargs)
     return parse_parallelization_options
@@ -653,7 +682,7 @@ def attack_options(attacks):
                       help='The L_p distance of the attack.')
         @functools.wraps(func)
         def _parse_attack_options(options, attack, p, *args, **kwargs):
-            enable_attack_parallelization = options['enable_attack_parallelization']
+            attack_parallelization = options['attack_parallelization']
             foolbox_model = options['foolbox_model']
             torch_model = options['torch_model']
             loader = options['loader']
@@ -663,13 +692,13 @@ def attack_options(attacks):
             elif p == 'inf':
                 p = np.inf
 
-            parallelize_attack = enable_attack_parallelization and attack in parallelizable_attacks
+            parallelize_attack = attack_parallelization and attack in parallelizable_attacks
 
             attack_options = dict(options)
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
             attack_options['attack_name'] = attack
-            attack_options['enable_attack_parallelization'] = enable_attack_parallelization
+            attack_options['attack_parallelization'] = attack_parallelization
             attack_options['p'] = p
             attack_options['parallelize_attack'] = parallelize_attack
             attack_options['loader'] = loader
@@ -689,7 +718,7 @@ def detector_options(failure_value):
         @functools.wraps(func)
         def _parse_detector_options(options, detector, anti_attack, anti_attack_p, *args, **kwargs):
             foolbox_model = options['foolbox_model']
-            enable_attack_parallelization = options['enable_attack_parallelization']
+            attack_parallelization = options['attack_parallelization']
 
             if anti_attack_p == '2':
                 anti_attack_p = 2
@@ -697,7 +726,7 @@ def detector_options(failure_value):
                 anti_attack_p = np.inf
 
             parallelize_anti_attack = (
-                anti_attack in parallelizable_attacks) and enable_attack_parallelization
+                anti_attack in parallelizable_attacks) and attack_parallelization
 
             anti_attack_constructor = parse_attack_constructor(
                 anti_attack, anti_attack_p)

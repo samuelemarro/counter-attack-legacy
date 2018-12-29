@@ -11,15 +11,15 @@ from . import utils
 
 
 class Preprocessing(torch.nn.Module):
-    def __init__(self, means, stds):
+    def __init__(self, means, stdevs):
         super(Preprocessing, self).__init__()
         self.means = torch.from_numpy(np.array(means).reshape((3, 1, 1)))
-        self.stds = torch.from_numpy(np.array(stds).reshape((3, 1, 1)))
+        self.stdevs = torch.from_numpy(np.array(stdevs).reshape((3, 1, 1)))
 
     def forward(self, input):
         means = self.means.to(input)
-        stds = self.stds.to(input)
-        return (input - means) / stds
+        stdevs = self.stdevs.to(input)
+        return (input - means) / stdevs
 
 
 def load_state_dict(base_model, path, training_model, data_parallel):

@@ -99,33 +99,68 @@ def attack_test(foolbox_model: foolbox.models.Model,
     return distances, failure_count, adversarials, adversarial_ground_truths
 
 
+# TODO: Foolbox model -> standard model. Add optional 'defended model' (preprocessor or model foolbox)
 def shallow_attack_test(foolbox_model: foolbox.models.Model,
-                        adversarial_loader,
+                        loader,
+                        attack,
+                        p,
                         detector=None,
                         threshold=None,
+                        batch_worker: batch_processing.BatchWorker = None,
+                        num_workers: int = 50,
                         name: str = 'Shallow Attack'):
-    success_rate = utils.AverageMeter()
-    for adversarials, ground_truth_labels in _get_iterator(name, adversarial_loader):
-        batch_predictions = foolbox_model.batch_predictions(adversarials)
-        labels = np.argmax(batch_predictions, axis=-1)
+    samples_count = 0
+    correct_samples_count = 0
+    successful_attack_count = 0
+    distances = []
 
-        successful_attacks = np.not_equal(ground_truth_labels, labels)
+    for images, labels in _get_iterator(name, loader):
+        samples_count += len(images)
 
+        # First step: Remove misclassified samples
+        correct_images, correct_labels = batch_attack.get_correct_samples(
+            foolbox_model, images, labels)
+
+        # Second step (optional): Remove samples that are wrongfully detected as adversarial
         if detector is not None:
             if threshold is None:
                 raise ValueError(
                     'threshold must be set if detector is not None.')
+            correct_images, correct_labels = batch_attack.get_approved_samples(
+                foolbox_model, correct_images, correct_labels, detector, threshold)
+
+        correct_samples_count += len(correct_images)
+        images, labels = correct_images, correct_labels
+
+        # Third step: Generate adversarial samples from the remaining samples (removing failed adversarials)
+        adversarials, images, labels = batch_attack.get_adversarials(
+            foolbox_model, images, labels, attack, True, batch_worker, num_workers)
+
+        # Fourth step (optional): Remove adversarial samples that are detected as such
+        if detector is not None:
             scores = np.array(detector.get_scores(adversarials))
-            valid_attacks = scores >= threshold
+            is_valid = scores >= threshold
+            valid_indices = [i for i in range(
+                len(adversarials)) if is_valid[i]]
+            valid_indices = np.array(valid_adversarials)
+            valid_adversarials = adversarials[valid_indices]
+            adversarials = valid_adversarials
 
-            successful_attacks = np.logical_and(
-                successful_attacks, valid_attacks)
+        successful_attack_count += len(adversarials)
 
-        success_count = np.count_nonzero(successful_attacks)
-        success_rate.update(1, success_count)
-        success_rate.update(0, len(adversarials) - success_count)
+        # Fifth step: Compute the distances
+        batch_distances = utils.lp_distance(images, adversarials, p, True)
+        distances += list(batch_distances)
 
-    return success_rate.avg
+        accuracy = correct_samples_count / samples_count
+        success_rate = successful_attack_count / correct_samples_count
+        logger.debug('Accuracy: {:2.2f}%'.format(accuracy * 100.0))
+        logger.debug('Success Rate: {:2.2f}%'.format(success_rate * 100.0))
+
+    accuracy = correct_samples_count / samples_count
+    success_rate = successful_attack_count / correct_samples_count
+
+    return accuracy, success_rate, np.array(distances)
 
 
 def standard_detector_test(foolbox_model: foolbox.models.Model,
