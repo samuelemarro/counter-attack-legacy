@@ -137,9 +137,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         _, batch_is_adversarial = self._safe_batch_predictions(
             foolbox_adversarial, potential_adversarials)
 
-        successful_adversarial_indices = np.nonzero(batch_is_adversarial)[0]
-
-        return potential_adversarials[successful_adversarial_indices], vectors[successful_adversarial_indices]
+        return potential_adversarials[batch_is_adversarial], vectors[batch_is_adversarial]
 
     def _find_closest_sample(self, foolbox_adversarial):
         logger = logging.getLogger(__name__)

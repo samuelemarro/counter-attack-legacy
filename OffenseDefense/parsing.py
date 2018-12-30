@@ -461,9 +461,6 @@ def pretrained_model_options(func):
     Adds:
         foolbox_model
         torch_model
-
-    Mutually exclusive with:
-        custom_model_options
     """
 
     @click.option('-mp', '--model-path', type=click.Path(file_okay=True, dir_okay=False), default=None)
@@ -512,7 +509,7 @@ def custom_model_options(func):
         device = options['device']
         num_classes = options['num_classes']
 
-        torch_model = torch.load_model(custom_model_path)
+        custom_torch_model = torch.load_model(custom_model_path)
 
         if preprocessing is None:
             logger.warning('You are not applying any preprocessing to your data. '
@@ -531,14 +528,15 @@ def custom_model_options(func):
                     preprocessing = model_tools.Preprocessing(means, stdevs)
             except:
                 raise click.BadOptionUsage('Invalid preprocessing format.')
-            torch_model = torch.nn.Sequential(preprocessing, torch_model)
+            custom_torch_model = torch.nn.Sequential(
+                preprocessing, custom_torch_model)
 
-        foolbox_model = foolbox.models.PyTorchModel(
-            torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
+        custom_foolbox_model = foolbox.models.PyTorchModel(
+            custom_torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
 
         custom_model_options = dict(options)
-        custom_model_options['foolbox_model'] = foolbox_model
-        custom_model_options['torch_model'] = torch_model
+        custom_model_options['custom_foolbox_model'] = custom_foolbox_model
+        custom_model_options['custom_torch_model'] = custom_torch_model
 
         return func(custom_model_options, *args, **kwargs)
     return _parse_custom_model_options

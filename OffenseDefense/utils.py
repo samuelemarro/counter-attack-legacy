@@ -107,13 +107,17 @@ def get_best_threshold(true_positive_rates, false_positive_rates, thresholds):
     return thresholds[best_threshold_index].item(), true_positive_rates[best_threshold_index].item(), false_positive_rates[best_threshold_index].item()
 
 
-def lp_distance(x, y, p, batch, broadcast=True):
+def lp_distance(x, y, p, batch, broadcast=False):
     """
     Computes the L_p distance between two points. Works with matrices
     of rank above 2 and supports batches, unlike numpy.linanlg.norm
     """
     if p < 0:
         raise ValueError('p must be positive or zero')
+
+    if len(x) != len(y) and batch and not broadcast:
+        raise ValueError(
+            '\'x\' and \'y\' must have the same length if batch=True and broadcast=False.')
 
     # If x or y are empty, we retun an empty array
     empty_x = hasattr(x, '__len__') and len(x) == 0
@@ -143,14 +147,19 @@ def lp_distance(x, y, p, batch, broadcast=True):
 
 def filter_lists(condition, *lists):
     final_lists = []
+    is_numpy = [isinstance(_list, np.ndarray) for _list in lists]
 
-    for i in range(len(lists)):
+    for _list in lists:
         final_lists.append([])
 
     for _tuple in zip(*lists):
         if(condition(*_tuple)):
             for i, value in enumerate(_tuple):
                 final_lists[i].append(value)
+
+    for i in range(len(lists)):
+        if is_numpy[i]:
+            final_lists[i] = np.array(i)
 
     return final_lists
 

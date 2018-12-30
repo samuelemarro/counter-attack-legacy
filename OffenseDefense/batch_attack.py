@@ -235,6 +235,9 @@ def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
                      remove_failed: bool,
                      batch_worker: batch_processing.BatchWorker = None,
                      num_workers: int = 50):
+    if len(images) != len(labels):
+        raise ValueError('images and labels must have the same length.')
+
     _filter = utils.Filter()
     _filter['images'] = images
     _filter['image_labels'] = labels
