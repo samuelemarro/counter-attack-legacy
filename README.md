@@ -1,7 +1,7 @@
 [![Build Status](https://travis-ci.com/samuelemarro/anti-attacks.png?branch=master)](https://travis-ci.com/samuelemarro/anti-attacks)
-# Counter Attack
+# Counter-Attack
 
-Counter Attack is an adversarial attack-based defense against adversarial attacks. It uses adversarial attacks to estimate the distance to the decision boundary.
+Counter-Attack is an adversarial attack-based defense against adversarial attacks. It uses adversarial attacks to estimate the distance to the decision boundary.
 
 # Acknowledgements
 
