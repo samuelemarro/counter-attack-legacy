@@ -5,4 +5,4 @@ Counter-Attack is an adversarial attack-based defense against adversarial attack
 
 # Acknowledgements
 
-We would like to thank Wei Yang and all the contributors of [pytorch_classification](https://github.com/bearpaw/pytorch-classification) for their pretrained CIFAR and ImageNet models.
+We would like to thank Wei Yang and all the contributors of [pytorch_classification](https://github.com/bearpaw/pytorch-classification) for their pretrained CIFAR models.
