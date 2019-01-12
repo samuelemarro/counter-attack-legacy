@@ -107,6 +107,39 @@ def get_best_threshold(true_positive_rates, false_positive_rates, thresholds):
     return thresholds[best_threshold_index].item(), true_positive_rates[best_threshold_index].item(), false_positive_rates[best_threshold_index].item()
 
 
+def accuracy_distortion_curve(base_accuracy, base_attack_success_rate, distances):
+    ascending_distances = np.sort(distances)
+    x = [0]
+    y = [base_accuracy]
+
+    for i, distance in enumerate(ascending_distances):
+
+        # If we're considering the nth distance, it means that n attacks are successful,
+        # so the success rate for the nth distance is n / number of distances. Since the
+        # distances are only computed for the successful attacks, we have to multiply by
+        # the attack base success rate
+
+        attack_success_rate = base_attack_success_rate * \
+            (i + 1) / len(distances)
+
+        accuracy = base_accuracy - attack_success_rate
+
+        # If distance is already in x, it means that two or more distances are equal.
+        # In that case, update the accuracy for the corrensponding distance
+
+        if distance in x:
+            assert x[-1] == distance
+            y[-1] = accuracy
+        else:
+            x.append(distance)
+            y.append(accuracy)
+
+    x = np.array(x)
+    y = np.array(y)
+
+    return x, y
+
+
 def lp_distance(x, y, p, batch, broadcast=False):
     """
     Computes the L_p distance between two points. Works with matrices

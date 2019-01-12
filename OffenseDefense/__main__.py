@@ -262,8 +262,6 @@ def shallow_detector(options, threshold):
     accuracy, success_rate, distances = tests.shallow_detector_test(
         foolbox_model, loader, attack, p, detector, threshold, batch_worker, attack_workers)
 
-    # TODO: Accuracy-Distortion curve (using accuracy and success rate)
-
     info = [
         ['Base Accuracy', '{:2.2f}%'.format(
             accuracy * 100.0)],
@@ -323,7 +321,7 @@ def shallow_model(options):
 
 
 @defense.group(name='preprocessor')
-def preprocessor_defense(name='preprocessor'):
+def preprocessor_defense():
     pass
 
 
