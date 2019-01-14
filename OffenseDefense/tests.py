@@ -28,10 +28,10 @@ def accuracy_test(foolbox_model: foolbox.models.Model,
         batch_predictions = foolbox_model.batch_predictions(images)
 
         for i, top_k in enumerate(top_ks):
-            correct_samples_count = utils.top_k_count(
+            correct_count = utils.top_k_count(
                 batch_predictions, labels, top_k)
-            accuracies[i].update(1, correct_samples_count)
-            accuracies[i].update(0, len(images) - correct_samples_count)
+            accuracies[i].update(1, correct_count)
+            accuracies[i].update(0, len(images) - correct_count)
 
         for i in np.argsort(top_ks):
             logger.debug(
@@ -52,21 +52,25 @@ def attack_test(foolbox_model: foolbox.models.Model,
                 save_adversarials: bool = False,
                 name: str = 'Attack Test') -> Tuple[float, np.ndarray]:
 
-    success_rate = utils.AverageMeter()
+    samples_count = 0
+    correct_count = 0
+    successful_attack_count = 0
     distances = []
     adversarials = [] if save_adversarials else None
     adversarial_ground_truths = [] if save_adversarials else None
 
     for images, labels in _get_iterator(name, loader):
+        samples_count += len(images)
+
         correct_images, correct_labels = batch_attack.get_correct_samples(
             foolbox_model, images, labels)
+
+        correct_count += len(correct_images)
 
         successful_adversarials, successful_images, successful_labels = batch_attack.get_adversarials(
             foolbox_model, correct_images, correct_labels, attack, True, batch_worker, num_workers)
 
-        success_rate.update(1, len(successful_adversarials))
-        success_rate.update(0, len(correct_images) -
-                            len(successful_adversarials))
+        successful_attack_count += len(successful_adversarials)
 
         # If there are no successful adversarials, don't update the distances or the adversarials
         if len(successful_adversarials) > 0:
@@ -77,26 +81,33 @@ def attack_test(foolbox_model: foolbox.models.Model,
                 adversarials += list(successful_adversarials)
                 adversarial_ground_truths += list(successful_labels)
 
-        failure_count = success_rate.count - \
-            success_rate.sum
-        average_distance, median_distance, _, adjusted_median_distance = utils.distance_statistics(
+        failure_count = correct_count - successful_attack_count
+
+        average_distance, median_distance, adjusted_median_distance = utils.distance_statistics(
             distances, failure_count)
 
         logger.debug('Average Distance: {:2.2e}'.format(average_distance))
         logger.debug('Median Distance: {:2.2e}'.format(median_distance))
-        logger.debug('Success Rate: {:2.2f}%'.format(success_rate.avg * 100.0))
+        logger.debug('Success Rate: {:2.2f}%'.format(
+            successful_attack_count / correct_count * 100.0))
         logger.debug('Adjusted Median Distance: {:2.2e}'.format(
             adjusted_median_distance))
 
         logger.debug('\n============\n')
 
-    failure_count = success_rate.count - success_rate.sum
-
     if save_adversarials:
         adversarials = np.array(adversarials)
         adversarial_ground_truths = np.array(adversarial_ground_truths)
 
-    return distances, failure_count, adversarials, adversarial_ground_truths
+    assert samples_count >= correct_count
+    assert correct_count >= successful_attack_count
+    assert len(distances) == successful_attack_count
+
+    if adversarials is not None:
+        assert len(distances) == len(adversarials)
+        assert len(adversarials) == len(adversarial_ground_truths)
+
+    return samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths
 
 
 def shallow_detector_test(standard_model: foolbox.models.Model,
@@ -109,7 +120,7 @@ def shallow_detector_test(standard_model: foolbox.models.Model,
                           num_workers: int = 50,
                           name: str = 'Shallow Detector Attack'):
     samples_count = 0
-    correct_samples_count = 0
+    correct_count = 0
     successful_attack_count = 0
     distances = []
 
@@ -124,7 +135,7 @@ def shallow_detector_test(standard_model: foolbox.models.Model,
         correct_images, correct_labels = batch_attack.get_approved_samples(
             standard_model, correct_images, correct_labels, detector, threshold)
 
-        correct_samples_count += len(correct_images)
+        correct_count += len(correct_images)
         images, labels = correct_images, correct_labels
 
         # Third step: Generate adversarial samples against the standard model (removing failed adversarials)
@@ -145,15 +156,16 @@ def shallow_detector_test(standard_model: foolbox.models.Model,
         batch_distances = utils.lp_distance(images, adversarials, p, True)
         distances += list(batch_distances)
 
-        accuracy = correct_samples_count / samples_count
-        success_rate = successful_attack_count / correct_samples_count
+        accuracy = correct_count / samples_count
+        success_rate = successful_attack_count / correct_count
         logger.debug('Accuracy: {:2.2f}%'.format(accuracy * 100.0))
         logger.debug('Success Rate: {:2.2f}%'.format(success_rate * 100.0))
 
-    accuracy = correct_samples_count / samples_count
-    success_rate = successful_attack_count / correct_samples_count
+    assert samples_count >= correct_count
+    assert correct_count >= successful_attack_count
+    assert len(distances) == successful_attack_count
 
-    return accuracy, success_rate, np.array(distances)
+    return samples_count, correct_count, successful_attack_count, np.array(distances)
 
 
 def shallow_model_test(standard_model: foolbox.models.Model,
@@ -165,7 +177,7 @@ def shallow_model_test(standard_model: foolbox.models.Model,
                        num_workers: int = 50,
                        name: str = 'Shallow Model Attack'):
     samples_count = 0
-    correct_samples_count = 0
+    correct_count = 0
     successful_attack_count = 0
     distances = []
 
@@ -176,7 +188,7 @@ def shallow_model_test(standard_model: foolbox.models.Model,
         correct_images, correct_labels = batch_attack.get_correct_samples(
             defended_model, images, labels)
 
-        correct_samples_count += len(correct_images)
+        correct_count += len(correct_images)
         images, labels = correct_images, correct_labels
 
         # Second step: Generate adversarial samples against the standard model (removing failed adversarials)
@@ -200,15 +212,16 @@ def shallow_model_test(standard_model: foolbox.models.Model,
         batch_distances = utils.lp_distance(images, adversarials, p, True)
         distances += list(batch_distances)
 
-        accuracy = correct_samples_count / samples_count
-        success_rate = successful_attack_count / correct_samples_count
+        accuracy = correct_count / samples_count
+        success_rate = successful_attack_count / correct_count
         logger.debug('Accuracy: {:2.2f}%'.format(accuracy * 100.0))
         logger.debug('Success Rate: {:2.2f}%'.format(success_rate * 100.0))
 
-    accuracy = correct_samples_count / samples_count
-    success_rate = successful_attack_count / correct_samples_count
+    assert samples_count >= correct_count
+    assert correct_count >= successful_attack_count
+    assert len(distances) == successful_attack_count
 
-    return accuracy, success_rate, np.array(distances)
+    return samples_count, correct_count, successful_attack_count, np.array(distances)
 
 
 def standard_detector_test(foolbox_model: foolbox.models.Model,
@@ -259,22 +272,26 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
                          num_workers: int = 50,
                          name: str = 'Parallelization Test'):
 
-    standard_success_rate = utils.AverageMeter()
-    parallel_success_rate = utils.AverageMeter()
+    samples_count = 0
+    correct_count = 0
+    standard_attack_count = 0
+    parallel_attack_count = 0
     standard_distances = []
     parallel_distances = []
 
     for images, labels in _get_iterator(name, loader):
+        samples_count += len(images)
+
         correct_images, correct_labels = batch_attack.get_correct_samples(
             foolbox_model, images, labels)
+
+        correct_count += len(correct_images)
 
         # Run the parallel attack
         parallel_adversarials, parallel_images, _ = batch_attack.get_adversarials(
             foolbox_model, correct_images, correct_labels, attack, True, batch_worker=batch_worker, num_workers=num_workers)
 
-        parallel_success_rate.update(1, len(parallel_adversarials))
-        parallel_success_rate.update(
-            0, len(correct_images) - len(parallel_adversarials))
+        parallel_attack_count += len(parallel_adversarials)
 
         parallel_distances += list(utils.lp_distance(
             parallel_adversarials, parallel_images, p, True))
@@ -283,28 +300,29 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
         standard_adversarials, standard_images, _ = batch_attack.get_adversarials(
             foolbox_model, correct_images, correct_labels, attack, True)
 
-        standard_success_rate.update(1, len(standard_adversarials))
-        standard_success_rate.update(
-            0, len(correct_images) - len(standard_adversarials))
+        standard_attack_count += len(standard_adversarials)
 
         standard_distances += list(utils.lp_distance(
             standard_adversarials, standard_images, p, True))
 
         # Compute the statistics, treating failures as samples with distance=Infinity
-        standard_failure_count = standard_success_rate.count - standard_success_rate.sum
-        parallel_failure_count = parallel_success_rate.count - parallel_success_rate.sum
+        standard_failure_count = correct_count - standard_attack_count
+        parallel_failure_count = correct_count - parallel_attack_count
 
-        standard_average_distance, standard_median_distance, _, standard_adjusted_median_distance = utils.distance_statistics(
+        standard_average_distance, standard_median_distance, standard_adjusted_median_distance = utils.distance_statistics(
             standard_distances, standard_failure_count)
-        parallel_average_distance, parallel_median_distance, _, parallel_adjusted_median_distance = utils.distance_statistics(
+        parallel_average_distance, parallel_median_distance, parallel_adjusted_median_distance = utils.distance_statistics(
             parallel_distances, parallel_failure_count)
+
+        standard_success_rate = standard_attack_count / correct_count
+        parallel_success_rate = parallel_attack_count / correct_count
 
         average_distance_difference = (
             parallel_average_distance - standard_average_distance) / standard_average_distance
         median_distance_difference = (
             parallel_median_distance - standard_median_distance) / standard_median_distance
         success_rate_difference = (
-            parallel_success_rate.avg - standard_success_rate.avg) / standard_success_rate.avg
+            parallel_success_rate - standard_success_rate) / standard_success_rate
         adjusted_median_distance_difference = (
             parallel_adjusted_median_distance - standard_adjusted_median_distance) / standard_adjusted_median_distance
 
@@ -319,7 +337,10 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         logger.debug('\n============\n')
 
-    standard_failure_count = standard_success_rate.count - standard_success_rate.sum
-    parallel_failure_count = parallel_success_rate.count - parallel_success_rate.sum
+    assert samples_count >= correct_count
+    assert correct_count >= standard_attack_count
+    assert correct_count >= parallel_attack_count
+    assert len(standard_distances) == standard_attack_count
+    assert len(parallel_distances) == parallel_attack_count
 
-    return standard_distances, standard_failure_count, parallel_distances, parallel_failure_count
+    return samples_count, correct_count, standard_attack_count, parallel_attack_count, standard_distances, parallel_distances

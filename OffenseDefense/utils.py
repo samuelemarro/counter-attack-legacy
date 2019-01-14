@@ -234,11 +234,11 @@ def distance_statistics(distances: np.ndarray, failure_count: int) -> Tuple[floa
     median_distance = np.median(distances)
     adjusted_median_distance = np.median(
         distances + [np.Infinity] * failure_count)
-    success_rate = len(distances) / (len(distances) + failure_count)
-    return average_distance, median_distance, success_rate, adjusted_median_distance
+
+    return average_distance, median_distance, adjusted_median_distance
 
 
-def save_results(path, table=None, command=None, info=None, header=None, delimiter='\t', transpose=False):
+def save_results(path, table=None, command=None, info=None, header=None, delimiter='\t'):
     # Add the command used to the info
     if command is not None:
         if info is None:
@@ -250,7 +250,7 @@ def save_results(path, table=None, command=None, info=None, header=None, delimit
     info += []
 
     # Transpose the table
-    if transpose and table is not None:
+    if table is not None:
         table = itertools.zip_longest(*table, fillvalue='')
 
     save_csv(path, table=table, info=info, header=header, delimiter=delimiter)
