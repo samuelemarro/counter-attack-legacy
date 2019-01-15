@@ -327,7 +327,57 @@ def shallow_model(options):
         standard_batch_worker = None
 
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_model_test(
-        foolbox_model, loader, attack, p, custom_foolbox_model, standard_batch_worker, attack_workers)
+        foolbox_model, loader, attack, p, custom_foolbox_model, standard_batch_worker, attack_workers, name='Shallow Model Attack')
+
+    accuracy = correct_count / samples_count
+    success_rate = successful_attack_count / correct_count
+
+    info = [
+        ['Base Accuracy', '{:2.2f}%'.format(
+            accuracy * 100.0)],
+        ['Base Attack Success Rate', '{:2.2f}%'.format(
+            success_rate * 100.0)],
+        ['Samples Count', str(samples_count)],
+        ['Correct Count', str(correct_count)],
+        ['Successful Attack Count', str(successful_attack_count)]
+    ]
+
+    header = ['Distances']
+
+    utils.save_results(results_path, table=[distances], command=command,
+                       info=info, header=header)
+
+
+@model_defense.command(name='black_box')
+@parsing.global_options
+@parsing.dataset_options('test')
+@parsing.test_options('defense/model/black_box')
+@parsing.parallelization_options
+@parsing.custom_model_options
+@parsing.attack_options(parsing.black_box_attacks)
+def black_box_model(options):
+    attack_name = options['attack_name']
+    attack_parallelization = options['attack_parallelization']
+    attack_workers = options['attack_workers']
+    command = options['command']
+    custom_foolbox_model = options['custom_foolbox_model']
+    device = options['device']
+    loader = options['loader']
+    p = options['p']
+    results_path = options['results_path']
+    custom_torch_model = options['custom_torch_model']
+
+    attack_constructor = parsing.parse_attack_constructor(attack_name, p)
+    attack = attack_constructor(
+        custom_foolbox_model, foolbox.criteria.Misclassification(), distance_tools.LpDistance(p))
+
+    if attack_parallelization:
+        custom_batch_worker = batch_attack.TorchWorker(custom_torch_model)
+    else:
+        custom_batch_worker = None
+
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
+        custom_foolbox_model, loader, attack, p, custom_batch_worker, attack_workers, name='Black-Box Model Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count

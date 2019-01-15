@@ -16,6 +16,11 @@ import torchvision
 
 from . import batch_attack, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, utils
 
+default_architecture_names = {
+    'cifar10': 'densenet (depth=190, growth_rate=40)',
+    'cifar100': 'densenet (depth=190, growth_rate=40)',
+    'imagenet': 'densenet (depth=161, growth_rate=48)'
+}
 datasets = ['cifar10', 'cifar100', 'imagenet']
 supported_attacks = ['boundary', 'deepfool', 'fgsm']
 parallelizable_attacks = ['deepfool', 'fgsm']
@@ -319,14 +324,14 @@ def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
     anti_attack_p = options['anti_attack_p']
     attack_workers = options['attack_workers']
     foolbox_model = options['foolbox_model']
-    parallelize_anti_attack = options['parallelize_anti_attack']
+    anti_attack_parallelization = options['anti_attack_parallelization']
     torch_model = options['torch_model']
 
     if tool_name == 'anti-attack':
         # We treat failures as -Infinity because failed
         # detection means that the sample is likely adversarial
 
-        if parallelize_anti_attack:
+        if anti_attack_parallelization:
             # Note: We use directly the model (without any defenses) since the anti-attack is a defense itself
             batch_worker = batch_attack.TorchWorker(torch_model)
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
@@ -467,18 +472,18 @@ def pretrained_model_options(func):
     @click.option('-dm', '--download-model', is_flag=True,
                   help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
     @functools.wraps(func)
-    def _parse_pretrained_model_options(options, model_path, download_model, *args, **kwargs):
+    def _parse_pretrained_model_options(options, state_dict_path, download_model, *args, **kwargs):
         base_model = options['base_model']
         cuda = options['cuda']
         dataset = options['dataset']
         device = options['device']
         num_classes = options['num_classes']
 
-        if model_path is None:
-            model_path = './pretrained_models/' + dataset + '.pth.tar'
+        if state_dict_path is None:
+            state_dict_path = './pretrained_models/' + dataset + '.pth.tar'
 
         torch_model = _get_pretrained_torch_model(
-            dataset, base_model, model_path, download_model)
+            dataset, base_model, state_dict_path, download_model)
         torch_model = torch.nn.Sequential(
             _get_preprocessing(dataset), torch_model)
 
@@ -500,16 +505,31 @@ def pretrained_model_options(func):
 
 
 def custom_model_options(func):
-    @click.argument('custom_model_path', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+    @click.option('--custom-state-dict-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
+    @click.option('--custom-model-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
     @click.option('--preprocessing', default=None,
                   help='The preprocessing that will be applied to the data. Supports both dataset names ({}) and '
                   'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(','.join(datasets)))
     @functools.wraps(func)
-    def _parse_custom_model_options(options, custom_model_path, preprocessing, *args, **kwargs):
+    def _parse_custom_model_options(options, custom_state_dict_path, custom_model_path, preprocessing, *args, **kwargs):
+        cuda = options['cuda']
+        dataset = options['dataset']
         device = options['device']
         num_classes = options['num_classes']
 
-        custom_torch_model = torch.load_model(custom_model_path)
+        # NXOR between custom_weights and custom_architecture
+        if (custom_state_dict_path is None) == (custom_model_path is None):
+            raise click.BadOptionUsage(
+                'You must pass either \'--custom-state-dict-path [PATH]\' or \'custom-model-path [PATH]\' (but not both).')
+
+        if custom_model_path is None:
+            custom_torch_model = _get_torch_model(dataset)
+            logger.info('No custom architecture path passed. Using default architecture {}'.format(
+                default_architecture_names[dataset]))
+            model_tools.load_state_dict(
+                custom_torch_model, custom_state_dict_path, False, False)
+        else:
+            custom_torch_model = torch.load(custom_model_path)
 
         if preprocessing is None:
             logger.warning('You are not applying any preprocessing to your data. '
@@ -530,6 +550,11 @@ def custom_model_options(func):
                 raise click.BadOptionUsage('Invalid preprocessing format.')
             custom_torch_model = torch.nn.Sequential(
                 preprocessing, custom_torch_model)
+
+        custom_torch_model.eval()
+
+        if cuda:
+            custom_torch_model.cuda()
 
         custom_foolbox_model = foolbox.models.PyTorchModel(
             custom_torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
@@ -652,22 +677,20 @@ def test_options(test_name):
 
 
 def parallelization_options(func):
-    @click.option('-nap', '--no-attack-parallelization', is_flag=True,
+    @click.option('--no-parallelization', is_flag=True,
                   help='Disables attack parallelization. This might increase the execution time.')
     @click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
                   help='The number of parallel workers that will be used to speed up the attack (if possible).')
     @functools.wraps(func)
-    def parse_parallelization_options(options, no_attack_parallelization, attack_workers, *args, **kwargs):
-        torch_model = options['torch_model']
+    def parse_parallelization_options(options, no_parallelization, attack_workers, *args, **kwargs):
+        enable_parallelization = not no_parallelization
 
-        attack_parallelization = not no_attack_parallelization
-
-        if not attack_parallelization:
+        if not enable_parallelization:
             attack_workers = 0
 
         parallelization_options = dict(options)
         parallelization_options['attack_workers'] = attack_workers
-        parallelization_options['attack_parallelization'] = attack_parallelization
+        parallelization_options['enable_parallelization'] = enable_parallelization
 
         return func(parallelization_options, *args, **kwargs)
     return parse_parallelization_options
@@ -680,26 +703,22 @@ def attack_options(attacks):
                       help='The L_p distance of the attack.')
         @functools.wraps(func)
         def _parse_attack_options(options, attack, p, *args, **kwargs):
-            attack_parallelization = options['attack_parallelization']
-            foolbox_model = options['foolbox_model']
-            torch_model = options['torch_model']
-            loader = options['loader']
+            enable_parallelization = options['enable_parallelization']
 
             if p == '2':
                 p = 2
             elif p == 'inf':
                 p = np.inf
 
-            parallelize_attack = attack_parallelization and attack in parallelizable_attacks
+            attack_parallelization = enable_parallelization and attack in parallelizable_attacks
 
             attack_options = dict(options)
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
             attack_options['attack_name'] = attack
-            attack_options['attack_parallelization'] = attack_parallelization
+            attack_options['enable_parallelization'] = enable_parallelization
             attack_options['p'] = p
-            attack_options['parallelize_attack'] = parallelize_attack
-            attack_options['loader'] = loader
+            attack_options['attack_parallelization'] = attack_parallelization
 
             return func(attack_options, *args, **kwargs)
         return _parse_attack_options
@@ -716,15 +735,15 @@ def detector_options(failure_value):
         @functools.wraps(func)
         def _parse_detector_options(options, detector, anti_attack, anti_attack_p, *args, **kwargs):
             foolbox_model = options['foolbox_model']
-            attack_parallelization = options['attack_parallelization']
+            enable_parallelization = options['enable_parallelization']
 
             if anti_attack_p == '2':
                 anti_attack_p = 2
             elif anti_attack_p == 'inf':
                 anti_attack_p = np.inf
 
-            parallelize_anti_attack = (
-                anti_attack in parallelizable_attacks) and attack_parallelization
+            anti_attack_parallelization = (
+                anti_attack in parallelizable_attacks) and enable_parallelization
 
             anti_attack_constructor = parse_attack_constructor(
                 anti_attack, anti_attack_p)
@@ -736,7 +755,7 @@ def detector_options(failure_value):
 
             detector_options['anti_attack'] = anti_attack
             detector_options['anti_attack_p'] = anti_attack_p
-            detector_options['parallelize_anti_attack'] = parallelize_anti_attack
+            detector_options['anti_attack_parallelization'] = anti_attack_parallelization
 
             # detector must be parsed last
             detector = parse_detector(
