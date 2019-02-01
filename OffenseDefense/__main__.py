@@ -77,7 +77,7 @@ def attack(options, saved_dataset_path, no_test_warning):
     if dataset_type == 'test' and save_adversarials and not no_test_warning:
         logger.warning('Remember to use \'-dt train\' if you plan to use the generated adversarials '
                        'to train or calibrate an adversarial detector. You can disable this warning by passing '
-                       '\'--no-test-warning\' (alias: \'-ntw\').')
+                       '\'--no-test-warning\'.')
 
     samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, p,
                                                                                                                                   batch_worker, attack_workers, save_adversarials=save_adversarials)
@@ -174,7 +174,7 @@ def detect(options, saved_dataset_path, no_test_warning):
     if dataset_type == 'test' and not no_test_warning:
         logger.warning('Remember to use \'-dt train\' if you plan to use the results '
                        'to pick a threshold for other tests. You can disable this warning by passing '
-                       '\'--no-test-warning\' (alias: \'-ntw\').')
+                       '\'--no-test-warning\'.')
 
     genuine_scores, adversarial_scores, genuine_samples, adversarial_samples = tests.standard_detector_test(
         foolbox_model, genuine_loader, adversarial_loader, detector, save_scores)
@@ -288,8 +288,6 @@ def shallow_detector(options, threshold):
 
     utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header)
-
-# TODO: Should the failure behaviour be customisable?
 
 
 @detector_defense.command(name='black-box')

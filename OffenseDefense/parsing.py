@@ -28,7 +28,7 @@ differentiable_attacks = ['deepfool', 'fgsm']
 black_box_attacks = [
     x for x in supported_attacks if x not in differentiable_attacks]
 
-supported_distance_tools = ['anti-attack']
+supported_distance_tools = ['counter-attack']
 supported_detectors = list(supported_distance_tools)
 supported_preprocessors = ['feature_squeezing', 'spatial_smoothing']
 
@@ -320,25 +320,25 @@ def parse_attack_constructor(attack_name, p):
 
 
 def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
-    anti_attack = options['anti_attack']
-    anti_attack_p = options['anti_attack_p']
+    counter_attack = options['counter_attack']
+    counter_attack_p = options['counter_attack_p']
     attack_workers = options['attack_workers']
     foolbox_model = options['foolbox_model']
-    anti_attack_parallelization = options['anti_attack_parallelization']
+    counter_attack_parallelization = options['counter_attack_parallelization']
     torch_model = options['torch_model']
 
-    if tool_name == 'anti-attack':
+    if tool_name == 'counter-attack':
         # We treat failures as -Infinity because failed
         # detection means that the sample is likely adversarial
 
-        if anti_attack_parallelization:
-            # Note: We use directly the model (without any defenses) since the anti-attack is a defense itself
+        if counter_attack_parallelization:
+            # Note: We use directly the model (without any defenses) since the counter-attack is a defense itself
             batch_worker = batch_attack.TorchWorker(torch_model)
-            distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
-                                                               anti_attack_p, failure_value, batch_worker, attack_workers)
+            distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
+                                                               counter_attack_p, failure_value, batch_worker, attack_workers)
         else:
-            distance_tool = distance_tools.AdversarialDistance(foolbox_model, anti_attack,
-                                                               anti_attack_p, failure_value)
+            distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
+                                                               counter_attack_p, failure_value)
     else:
         raise ValueError('Distance tool not supported.')
 
@@ -407,7 +407,7 @@ def global_options(func):
             if (not shuffle) and (not no_shuffle_warning):
                 logger.warning('You are limiting the number of batches, but you aren\'t applying any shuffling. '
                                'This means that the last parts of your dataset will be never used. You can disable this '
-                               'warning by passing \'--no-shuffle-warning\' (alias: \'-nsw\').')
+                               'warning by passing \'--no-shuffle-warning\'.')
 
         num_classes = _get_num_classes(dataset)
 
@@ -705,7 +705,10 @@ def attack_options(attacks):
         def _parse_attack_options(options, attack, p, *args, **kwargs):
             enable_parallelization = options['enable_parallelization']
 
-            p = float(p)
+            if p == '2':
+                p = 2
+            elif p == 'inf':
+                p = np.inf
 
             attack_parallelization = enable_parallelization and attack in parallelizable_attacks
 
@@ -722,37 +725,57 @@ def attack_options(attacks):
     return _attack_options
 
 
-def detector_options(failure_value):
-    def _detector_options(func):
-        @click.argument('detector', type=click.Choice(supported_detectors))
-        @click.option('--failure-value', type=float, default=-np.Infinity, show_default=True,
-                      help='The value that will be assigned if the detector is unable to compute the score.'
-                      'inf means automatic approval, -inf means automatic rejection.')
-        @click.option('--anti-attack', default='deepfool', type=click.Choice(supported_attacks),
-                      help='The anti-attack that will be used (if required).')
-        @click.option('--anti-attack-p', default='inf', type=click.Choice(supported_ps),
-                      help='The L_p distance of the anti-attack (if required).')
+def counter_attack_options(required):
+    def _counter_attack_options(func):
         @functools.wraps(func)
-        def _parse_detector_options(options, detector, failure_value, anti_attack, anti_attack_p, *args, **kwargs):
+        def _parse_counter_attack_options(options, counter_attack, counter_attack_p, *args, **kwargs):
+            print(args)
+            print(kwargs)
             foolbox_model = options['foolbox_model']
             enable_parallelization = options['enable_parallelization']
 
-            anti_attack_p = float(anti_attack_p)
+            counter_attack_p = float(counter_attack_p)
 
-            anti_attack_parallelization = (
-                anti_attack in parallelizable_attacks) and enable_parallelization
+            counter_attack_parallelization = (
+                counter_attack in parallelizable_attacks) and enable_parallelization
 
-            anti_attack_constructor = parse_attack_constructor(
-                anti_attack, anti_attack_p)
-            anti_attack = anti_attack_constructor(
+            counter_attack_constructor = parse_attack_constructor(
+                counter_attack, counter_attack_p)
+            counter_attack = counter_attack_constructor(
                 foolbox_model, foolbox.criteria.Misclassification(),
-                distance_tools.LpDistance(anti_attack_p))
+                distance_tools.LpDistance(counter_attack_p))
 
+            counter_attack_options = dict(options)
+
+            counter_attack_options['counter_attack'] = counter_attack
+            counter_attack_options['counter_attack_p'] = counter_attack_p
+            counter_attack_options['counter_attack_parallelization'] = counter_attack_parallelization
+
+            return func(counter_attack_options, *args, **kwargs)
+
+        parse_func = _parse_counter_attack_options
+        if required:
+            parse_func = click.option('--counter-attack-p', default='inf', type=click.Choice(supported_ps),
+                                      help='The L_p distance of the counter-attack.')(parse_func)
+            parse_func = click.argument(
+                'counter_attack', type=click.Choice(supported_attacks))(parse_func)
+        else:
+            parse_func = click.option('--counter-attack-p', default='inf', type=click.Choice(supported_ps),
+                                      help='The L_p distance of the counter-attack (if required).')(parse_func)
+            parse_func = click.option('--counter-attack', default='deepfool', type=click.Choice(supported_attacks),
+                                      help='The counter-attack that will be used (if required).')(parse_func)
+
+        return parse_func
+    return _counter_attack_options
+
+
+def detector_options(failure_value):
+    def _detector_options(func):
+        @click.argument('detector', type=click.Choice(supported_detectors))
+        @counter_attack_options(False)
+        @functools.wraps(func)
+        def _parse_detector_options(options, detector, *args, **kwargs):
             detector_options = dict(options)
-
-            detector_options['anti_attack'] = anti_attack
-            detector_options['anti_attack_p'] = anti_attack_p
-            detector_options['anti_attack_parallelization'] = anti_attack_parallelization
 
             # detector must be parsed last
             detector = parse_detector(
@@ -777,6 +800,7 @@ def preprocessor_options(func):
 
         preprocessor_options['feature_squeezing_bit_depth'] = feature_squeezing_bit_depth
         preprocessor_options['spatial_smoothing_window'] = spatial_smoothing_window
+
         # preprocessor must be parsed last
         preprocessor = parse_preprocessor(
             preprocessor, preprocessor_options)
@@ -805,7 +829,7 @@ def adversarial_dataset_options(func):
             if (not options['shuffle']) and (not options['no_shuffle_warning']):
                 logger.warning('You are limiting the number of adversarial batches, but you aren\'t applying any shuffling. '
                                'This means that the last parts of your adversarial dataset will be never used. You can disable this '
-                               'warning by passing \'--no-shuffle-warning\' (alias: \'-nsw\').')
+                               'warning by passing \'--no-shuffle-warning\'.')
 
             adversarial_loader = loaders.MaxBatchLoader(
                 adversarial_loader, max_adversarial_batches)
