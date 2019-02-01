@@ -384,18 +384,18 @@ def set_parameters(parameters):
 
 def global_options(func):
     @click.argument('dataset', type=click.Choice(datasets))
-    @click.option('-b', '--batch-size', default=5, show_default=True, type=click.IntRange(1, None),
+    @click.option('--batch-size', default=5, show_default=True, type=click.IntRange(1, None),
                   help='The size of each batch.')
-    @click.option('-mb', '--max-batches', type=click.IntRange(1, None), default=None,
+    @click.option('--max-batches', type=click.IntRange(1, None), default=None,
                   help='The maximum number of batches. If unspecified, no batch limiting is applied.')
-    @click.option('-s', '--shuffle', type=bool, default=True, show_default=True,
+    @click.option('--shuffle', type=bool, default=True, show_default=True,
                   help='Whether to shuffle the dataset.')
-    @click.option('-cp', '--config-path', default='./config.ini', type=click.Path(file_okay=True, exists=True),
+    @click.option('--config-path', default='./config.ini', type=click.Path(file_okay=True, exists=True),
                   help='The path to the configuration file.')
-    @click.option('-nc', '--no-cuda', is_flag=True)
-    @click.option('-nsw', '--no-shuffle-warning', is_flag=True,
+    @click.option('--no-cuda', is_flag=True)
+    @click.option('--no-shuffle-warning', is_flag=True,
                   help='Disables the warning for limiting batches without shuffling.')
-    @click.option('-v', '--verbosity', default='info', show_default=True, type=click.Choice(['debug', 'info', 'warning', 'error', 'critical']),
+    @click.option('--verbosity', default='info', show_default=True, type=click.Choice(['debug', 'info', 'warning', 'error', 'critical']),
                   help='Sets the level of verbosity.')
     @functools.wraps(func)
     def _parse_global_options(dataset, batch_size, max_batches, shuffle, config_path, no_cuda, no_shuffle_warning, verbosity, *args, **kwargs):
@@ -468,8 +468,8 @@ def pretrained_model_options(func):
         torch_model
     """
 
-    @click.option('-mp', '--model-path', type=click.Path(file_okay=True, dir_okay=False), default=None)
-    @click.option('-dm', '--download-model', is_flag=True,
+    @click.option('--state-dict-path', type=click.Path(file_okay=True, dir_okay=False), default=None)
+    @click.option('--download-model', is_flag=True,
                   help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
     @functools.wraps(func)
     def _parse_pretrained_model_options(options, state_dict_path, download_model, *args, **kwargs):
@@ -569,14 +569,14 @@ def custom_model_options(func):
 
 def dataset_options(recommended):
     def _dataset_options(func):
-        @click.option('-df', '--data-folder', default=None, type=click.Path(file_okay=False, dir_okay=True),
+        @click.option('--data-folder', default=None, type=click.Path(file_okay=False, dir_okay=True),
                       help='The path to the folder where the dataset is stored (or will be downloaded). '
                       'If unspecified, it defaults to \'./data/genuine/$dataset$\'.')
-        @click.option('-dt', '--dataset-type', default=recommended, show_default=True, type=click.Choice(['train', 'test']),
+        @click.option('--dataset-type', default=recommended, show_default=True, type=click.Choice(['train', 'test']),
                       help='Sets the dataset (train or test) that will be used.')
-        @click.option('-dd', '--download-dataset', is_flag=True,
+        @click.option('--download-dataset', is_flag=True,
                       help='If the dataset files do not exist, download them.')
-        @click.option('-lw', '--loader-workers', default=2, show_default=True, type=click.IntRange(0, None),
+        @click.option('--loader-workers', default=2, show_default=True, type=click.IntRange(0, None),
                       help='The number of parallel workers that will load the samples from the dataset. '
                       '0 disables parallelization.')
         @functools.wraps(func)
@@ -616,15 +616,15 @@ def dataset_options(recommended):
 
 def train_options(func):
     @click.argument('epochs', type=click.IntRange(1, None))
-    @click.option('-o', '--optimizer', type=click.Choice(['adam', 'sgd']), default='adam', show_default=True)
-    @click.option('-lr', '--learning_rate', type=float, default=1e-3, show_default=True)
-    @click.option('-wd', '--weight-decay', type=float, default=0, show_default=True)
-    @click.option('-ab', '--adam-betas', nargs=2, type=click.Tuple([float, float]), default=(0.9, 0.999), show_default=True)
-    @click.option('-ae', '--adam-epsilon', type=float, default=1e-8, show_default=True)
-    @click.option('-aa', '--adam-amsgrad', is_flag=True)
-    @click.option('-sm', '--sgd-momentum', type=float, default=0, show_default=True)
-    @click.option('-sd', '--sgd-dampening', type=float, default=0, show_default=True)
-    @click.option('-sn', '--sgd-nesterov', is_flag=True)
+    @click.option('--optimizer', type=click.Choice(['adam', 'sgd']), default='adam', show_default=True)
+    @click.option('--learning_rate', type=float, default=1e-3, show_default=True)
+    @click.option('--weight-decay', type=float, default=0, show_default=True)
+    @click.option('--adam-betas', nargs=2, type=click.Tuple([float, float]), default=(0.9, 0.999), show_default=True)
+    @click.option('--adam-epsilon', type=float, default=1e-8, show_default=True)
+    @click.option('--adam-amsgrad', is_flag=True)
+    @click.option('--sgd-momentum', type=float, default=0, show_default=True)
+    @click.option('--sgd-dampening', type=float, default=0, show_default=True)
+    @click.option('--sgd-nesterov', is_flag=True)
     @functools.wraps(func)
     def _parse_train_options(options, epochs, optimizer, learning_rate, weight_decay, adam_betas, adam_epsilon, adam_amsgrad, sgd_momentum, sgd_dampening, sgd_nesterov, *args, **kwargs):
         torch_model = options['torch_model']
@@ -656,7 +656,7 @@ def train_options(func):
 
 def test_options(test_name):
     def _test_options(func):
-        @click.option('-rp', '--results-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
+        @click.option('--results-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
                       help='The path to the CSV file where the results will be saved. If unspecified '
                       'it defaults to \'./results/{}/$dataset$ $start_time$.csv\''.format(test_name))
         @functools.wraps(func)
@@ -679,7 +679,7 @@ def test_options(test_name):
 def parallelization_options(func):
     @click.option('--no-parallelization', is_flag=True,
                   help='Disables attack parallelization. This might increase the execution time.')
-    @click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
+    @click.option('--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
                   help='The number of parallel workers that will be used to speed up the attack (if possible).')
     @functools.wraps(func)
     def parse_parallelization_options(options, no_parallelization, attack_workers, *args, **kwargs):
@@ -699,16 +699,13 @@ def parallelization_options(func):
 def attack_options(attacks):
     def _attack_options(func):
         @click.argument('attack', type=click.Choice(attacks))
-        @click.option('-p', default='inf', show_default=True, type=click.Choice(supported_ps),
+        @click.option('--p', default='inf', show_default=True, type=click.Choice(supported_ps),
                       help='The L_p distance of the attack.')
         @functools.wraps(func)
         def _parse_attack_options(options, attack, p, *args, **kwargs):
             enable_parallelization = options['enable_parallelization']
 
-            if p == '2':
-                p = 2
-            elif p == 'inf':
-                p = np.inf
+            p = float(p)
 
             attack_parallelization = enable_parallelization and attack in parallelizable_attacks
 
@@ -728,19 +725,19 @@ def attack_options(attacks):
 def detector_options(failure_value):
     def _detector_options(func):
         @click.argument('detector', type=click.Choice(supported_detectors))
-        @click.option('-aa', '--anti-attack', default='deepfool', type=click.Choice(supported_attacks),
+        @click.option('--failure-value', type=float, default=-np.Infinity, show_default=True,
+                      help='The value that will be assigned if the detector is unable to compute the score.'
+                      'inf means automatic approval, -inf means automatic rejection.')
+        @click.option('--anti-attack', default='deepfool', type=click.Choice(supported_attacks),
                       help='The anti-attack that will be used (if required).')
-        @click.option('-aap', '--anti-attack-p', default='inf', type=click.Choice(supported_ps),
+        @click.option('--anti-attack-p', default='inf', type=click.Choice(supported_ps),
                       help='The L_p distance of the anti-attack (if required).')
         @functools.wraps(func)
-        def _parse_detector_options(options, detector, anti_attack, anti_attack_p, *args, **kwargs):
+        def _parse_detector_options(options, detector, failure_value, anti_attack, anti_attack_p, *args, **kwargs):
             foolbox_model = options['foolbox_model']
             enable_parallelization = options['enable_parallelization']
 
-            if anti_attack_p == '2':
-                anti_attack_p = 2
-            elif anti_attack_p == 'inf':
-                anti_attack_p = np.inf
+            anti_attack_p = float(anti_attack_p)
 
             anti_attack_parallelization = (
                 anti_attack in parallelizable_attacks) and enable_parallelization
@@ -769,9 +766,9 @@ def detector_options(failure_value):
 
 def preprocessor_options(func):
     @click.argument('preprocessor', type=click.Choice(supported_preprocessors))
-    @click.option('-fsbd', '--feature-squeezing-bit-depth', type=int, default=8, show_default=True,
+    @click.option('--feature-squeezing-bit-depth', type=int, default=8, show_default=True,
                   help='The bit depth of feature squeezing (only applied if preprocessor is \'feature_squeezing\').')
-    @click.option('-ssw', '--spatial-smoothing-window', type=int, default=3, show_default=True,
+    @click.option('--spatial-smoothing-window', type=int, default=3, show_default=True,
                   help='The size of the sliding window for spatial smoothing (only applied if preprocessor is \'spatial_smoothing\').')
     @functools.wraps(func)
     def _parse_preprocessor_options(options, preprocessor, feature_squeezing_bit_depth, spatial_smoothing_window, *args, **kwargs):
@@ -791,7 +788,7 @@ def preprocessor_options(func):
 
 def adversarial_dataset_options(func):
     @click.argument('adversarial_dataset_path', type=click.Path(exists=True, file_okay=True, dir_okay=True))
-    @click.option('--max-adversarial_batches', '-mab', type=click.IntRange(1, None), default=None,
+    @click.option('--max-adversarial_batches', type=click.IntRange(1, None), default=None,
                   help='The maximum number of batches. If unspecified, no batch limiting is applied.')
     @functools.wraps(func)
     def _parse_adversarial_dataset_options(options, adversarial_dataset_path, max_adversarial_batches, *args, **kwargs):

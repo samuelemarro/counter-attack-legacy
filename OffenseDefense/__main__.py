@@ -35,9 +35,9 @@ def main(*args):
 @parsing.test_options('attack')
 @parsing.parallelization_options
 @parsing.attack_options(parsing.supported_attacks)
-@click.option('-sdp', '--saved_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
+@click.option('--saved-dataset-path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
               help='The path to the .zip file where the adversarial samples will be saved. If unspecified, no adversarial samples will be saved.')
-@click.option('--no-test-warning', '-ntw', is_flag=True,
+@click.option('--no-test-warning', is_flag=True,
               help='Disables the warning for running this test on the test set.')
 def attack(options, saved_dataset_path, no_test_warning):
     """
@@ -116,7 +116,7 @@ def attack(options, saved_dataset_path, no_test_warning):
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('accuracy')
-@click.option('-tk', '--top-ks', nargs=2, type=click.Tuple([int, int]), default=(1, 5), show_default=True,
+@click.option('--top-ks', nargs=2, type=click.Tuple([int, int]), default=(1, 5), show_default=True,
               help='The two top-k accuracies that will be computed.')
 def accuracy(options, top_ks):
     """
@@ -150,9 +150,9 @@ def accuracy(options, top_ks):
 @parsing.parallelization_options
 @parsing.detector_options(-np.Infinity)
 @parsing.adversarial_dataset_options
-@click.option('-sdp', '--saved_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
+@click.option('--saved_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
               help='The path to the .zip file where the scores will be saved with their corresponding images. If unspecified, no scores will be saved.')
-@click.option('--no-test-warning', '-ntw', is_flag=True,
+@click.option('--no-test-warning', is_flag=True,
               help='Disables the warning for running this test on the test set.')
 def detect(options, saved_dataset_path, no_test_warning):
     """
@@ -289,6 +289,75 @@ def shallow_detector(options, threshold):
     utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header)
 
+# TODO: Should the failure behaviour be customisable?
+
+
+@detector_defense.command(name='black-box')
+@parsing.global_options
+@parsing.dataset_options('test')
+@parsing.standard_model_options
+@parsing.pretrained_model_options
+@parsing.test_options('defense/detector/black-box')
+@parsing.parallelization_options
+@parsing.detector_options(-np.Infinity)
+@parsing.attack_options(parsing.black_box_attacks)
+@click.argument('threshold', type=float)
+def black_box_detector(options, threshold):
+    attack_name = options['attack_name']
+    attack_parallelization = options['attack_parallelization']
+    attack_workers = options['attack_workers']
+    command = options['command']
+    detector = options['detector']
+    foolbox_model = options['foolbox_model']
+    loader = options['loader']
+    p = options['p']
+    results_path = options['results_path']
+
+    # The defended_model returns [y1, y2 ... yN, undetected_value (-inf)] if it believes
+    # that the sample is valid, otherwise it returns [0, 0 ... 0, 1]
+    # This means that if the top label is the last one, it was classified as adversarial.
+    # On a genuine dataset, this should never happen (if the detector is perfect).
+
+    defended_model = detectors.CompositeDetectorModel(
+        foolbox_model, detector, threshold, undetected_value=-np.Infinity)
+
+    # detectors.Undetected() adds the condition that the top label must not be the last
+    # Note: foolbox.Criterion and foolbox.Criterion should give a combined criterion, but
+    # apparently it doesn't work. The documentation recommends using "&"
+
+    criterion = foolbox.criteria.CombinedCriteria(
+        foolbox.criteria.Misclassification(), detectors.Undetected())
+
+    attack_constructor = parsing.parse_attack_constructor(attack_name, p)
+    attack = attack_constructor(
+        defended_model, criterion, distance_tools.LpDistance(p))
+
+    if attack_parallelization:
+        defended_batch_worker = batch_attack.FoolboxWorker(defended_model)
+    else:
+        defended_batch_worker = None
+
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
+        defended_model, loader, attack, p, defended_batch_worker, attack_workers, name='Black-Box Detector Attack')
+
+    accuracy = correct_count / samples_count
+    success_rate = successful_attack_count / correct_count
+
+    info = [
+        ['Base Accuracy', '{:2.2f}%'.format(
+            accuracy * 100.0)],
+        ['Base Attack Success Rate', '{:2.2f}%'.format(
+            success_rate * 100.0)],
+        ['Samples Count', str(samples_count)],
+        ['Correct Count', str(correct_count)],
+        ['Successful Attack Count', str(successful_attack_count)]
+    ]
+
+    header = ['Distances']
+
+    utils.save_results(results_path, table=[distances], command=command,
+                       info=info, header=header)
+
 
 @defense.group(name='model')
 def model_defense():
@@ -348,10 +417,10 @@ def shallow_model(options):
                        info=info, header=header)
 
 
-@model_defense.command(name='black_box')
+@model_defense.command(name='black-box')
 @parsing.global_options
 @parsing.dataset_options('test')
-@parsing.test_options('defense/model/black_box')
+@parsing.test_options('defense/model/black-box')
 @parsing.parallelization_options
 @parsing.custom_model_options
 @parsing.attack_options(parsing.black_box_attacks)
@@ -459,12 +528,12 @@ def shallow_preprocessor(options):
                        info=info, header=header)
 
 
-@preprocessor_defense.command(name='black_box')
+@preprocessor_defense.command(name='black-box')
 @parsing.global_options
 @parsing.dataset_options('test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
-@parsing.test_options('defense/preprocessor/black_box')
+@parsing.test_options('defense/preprocessor/black-box')
 @parsing.parallelization_options
 @parsing.preprocessor_options
 @parsing.attack_options(parsing.black_box_attacks)
@@ -523,7 +592,7 @@ def black_box_preprocessor(options):
 @parsing.test_options('parallelization')
 @parsing.set_parameters({'attack_parallelization': True})
 @parsing.attack_options(parsing.parallelizable_attacks)
-@click.option('-aw', '--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
+@click.option('--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
               help='The number of parallel workers that will be used to speed up the attack.')
 def parallelization(options, attack_workers):
     """
@@ -587,7 +656,7 @@ def parallelization(options, attack_workers):
 @parsing.global_options
 @parsing.dataset_options('train')
 @parsing.train_options
-@click.option('-tmp', '--trained-model-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
+@click.option('--trained-model-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
               help='The path to the file where the model will be saved. If unspecified, it defaults to \'./train_model/$dataset$ $start_time$.pth.tar\'')
 def train_model(options, trained_model_path):
     command = options['command']
@@ -616,8 +685,8 @@ def train_model(options, trained_model_path):
 @main.command()
 @parsing.global_options
 @parsing.train_options
-@click.option('-l', '--loss', type=click.Choice(['l1', 'l2', 'smooth_l1']), default='l2', show_default=True)
-@click.option('-tap', '--trained-approximator-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
+@click.option('--loss', type=click.Choice(['l1', 'l2', 'smooth_l1']), default='l2', show_default=True)
+@click.option('--trained-approximator-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
               help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./train_approximator/$dataset$ $start_time$.pth.tar\'')
 def train_approximator(options, loss, trained_approximator_path):
     cuda = options['cuda']

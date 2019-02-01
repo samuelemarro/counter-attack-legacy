@@ -61,7 +61,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
             The model that will be attacked. Can be overriden during the call by passing
             a foolbox.Adversarial with a different model.
         criterion : foolbox.criteria.Criterion
-            The criterion that wiil be used. Can be overriden during the call by passing
+            The criterion that will be used. Can be overriden during the call by passing
             a foolbox.Adversarial with a different model.
         p : numpy.float
             The p of the L_p norm that will be used to compare samples.

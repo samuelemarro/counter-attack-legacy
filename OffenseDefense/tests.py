@@ -62,6 +62,8 @@ def attack_test(foolbox_model: foolbox.models.Model,
     for images, labels in _get_iterator(name, loader):
         samples_count += len(images)
 
+        # Remove misclassified samples
+
         correct_images, correct_labels = batch_attack.get_correct_samples(
             foolbox_model, images, labels)
 
@@ -72,7 +74,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
 
         successful_attack_count += len(successful_adversarials)
 
-        # If there are no successful adversarials, don't update the distances or the adversarials
+        # Update the distances and/or the adversarials (if there are successful adversarials)
         if len(successful_adversarials) > 0:
             distances += list(utils.lp_distance(
                 successful_adversarials, successful_images, p, True))
