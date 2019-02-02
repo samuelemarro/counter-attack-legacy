@@ -1,6 +1,10 @@
+import logging
+
 import foolbox
 import numpy as np
 from . import batch_attack, batch_processing, utils
+
+logger = logging.getLogger(__name__)
 
 
 class DistanceTool:
@@ -43,6 +47,8 @@ class AdversarialDistance(DistanceTool):
 
     def get_distance(self, image):
         predictions = self.foolbox_model.predictions(image)
+        logger.info('Requested single distance estimate.')
+
         label = np.argmax(predictions)
 
         adversarial = self.attack(image, label)
@@ -54,6 +60,8 @@ class AdversarialDistance(DistanceTool):
         return distance
 
     def get_distances(self, images):
+        logger.info('Requested {} distance estimates'.format(len(images)))
+
         batch_predictions = self.foolbox_model.batch_predictions(images)
         labels = np.argmax(batch_predictions, axis=1)
 

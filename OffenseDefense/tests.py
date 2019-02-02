@@ -61,18 +61,22 @@ def attack_test(foolbox_model: foolbox.models.Model,
 
     for images, labels in _get_iterator(name, loader):
         samples_count += len(images)
+        logger.info('Received {} images'.format(len(images)))
 
         # Remove misclassified samples
-
         correct_images, correct_labels = batch_attack.get_correct_samples(
             foolbox_model, images, labels)
 
         correct_count += len(correct_images)
+        logger.info('{} correct images ({} removed)'.format(
+            correct_count, samples_count - correct_count))
 
         successful_adversarials, successful_images, successful_labels = batch_attack.get_adversarials(
             foolbox_model, correct_images, correct_labels, attack, True, batch_worker, num_workers)
 
         successful_attack_count += len(successful_adversarials)
+        logger.info('{} successful attacks ({} removed)'.format(
+            successful_attack_count, correct_count - successful_attack_count))
 
         # Update the distances and/or the adversarials (if there are successful adversarials)
         if len(successful_adversarials) > 0:
@@ -91,7 +95,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
         logger.debug('Average Distance: {:2.2e}'.format(average_distance))
         logger.debug('Median Distance: {:2.2e}'.format(median_distance))
         logger.debug('Success Rate: {:2.2f}%'.format(
-            successful_attack_count / correct_count * 100.0))
+            successful_attack_count / float(correct_count) * 100.0))
         logger.debug('Adjusted Median Distance: {:2.2e}'.format(
             adjusted_median_distance))
 

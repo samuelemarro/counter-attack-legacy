@@ -14,7 +14,7 @@ import tarfile
 import torch
 import torchvision
 
-from . import batch_attack, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, utils
+from . import attacks, batch_attack, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, utils
 
 default_architecture_names = {
     'cifar10': 'densenet (depth=190, growth_rate=40)',
@@ -303,39 +303,51 @@ def _get_num_classes(dataset):
         raise ValueError('Dataset not supported')
 
 
-def parse_attack_constructor(attack_name, p):
+def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs):
+    attack_constructor = None
+
     if attack_name == 'deepfool':
         if p == 2:
-            return foolbox.attacks.DeepFoolL2Attack
+            attack_constructor = foolbox.attacks.DeepFoolL2Attack
         elif p == np.inf:
-            return foolbox.attacks.DeepFoolLinfinityAttack
+            attack_constructor = foolbox.attacks.DeepFoolLinfinityAttack
         else:
             raise ValueError('Deepfool supports L-2 and L-Infinity')
     elif attack_name == 'fgsm':
-        return foolbox.attacks.FGSM
+        attack_constructor = foolbox.attacks.FGSM
     elif attack_name == 'boundary':
-        return foolbox.attacks.BoundaryAttack
+        attack_constructor = foolbox.attacks.BoundaryAttack
     else:
         raise ValueError('Attack not supported.')
+
+    distance = distance_tools.LpDistance(p)
+
+    attack = attack_constructor(foolbox_model, criterion, distance)
+
+    if len(attack_call_kwargs) > 0:
+        logger.debug('Added attack call keyword arguments: {}'.format(
+            attack_call_kwargs))
+        attack = attacks.AttackWithParameters(attack, **attack_call_kwargs)
+
+    return attack
 
 
 def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
     counter_attack = options['counter_attack']
     counter_attack_p = options['counter_attack_p']
-    attack_workers = options['attack_workers']
+    counter_attack_workers = options['counter_attack_workers']
     foolbox_model = options['foolbox_model']
     counter_attack_parallelization = options['counter_attack_parallelization']
     torch_model = options['torch_model']
 
     if tool_name == 'counter-attack':
-        # We treat failures as -Infinity because failed
-        # detection means that the sample is likely adversarial
-
         if counter_attack_parallelization:
-            # Note: We use directly the model (without any defenses) since the counter-attack is a defense itself
+            # Note: We use the Torch worker directly (without any defenses) since the counter-attack is the defense
+            # We also use it because some attacks require the gradient.
+
             batch_worker = batch_attack.TorchWorker(torch_model)
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                               counter_attack_p, failure_value, batch_worker, attack_workers)
+                                                               counter_attack_p, failure_value, batch_worker, counter_attack_workers)
         else:
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
                                                                counter_attack_p, failure_value)
@@ -727,41 +739,44 @@ def attack_options(attacks):
 
 def counter_attack_options(required):
     def _counter_attack_options(func):
+        @click.option('--counter-attack-p', default='inf', type=click.Choice(supported_ps),
+                      help='The L_p distance of the counter-attack.')
+        @click.option('--counter-attack-workers', default=None, type=click.IntRange(1, None),
+                      help='The number of attack workers of the counter attack. If unspecified, it defaults to the number of attack workers.')
         @functools.wraps(func)
-        def _parse_counter_attack_options(options, counter_attack, counter_attack_p, *args, **kwargs):
-            print(args)
-            print(kwargs)
+        def _parse_counter_attack_options(options, counter_attack, counter_attack_p, counter_attack_workers, *args, **kwargs):
+            attack_workers = options['attack_workers']
             foolbox_model = options['foolbox_model']
             enable_parallelization = options['enable_parallelization']
 
             counter_attack_p = float(counter_attack_p)
 
+            if counter_attack_workers is None:
+                counter_attack_workers = attack_workers
+
             counter_attack_parallelization = (
                 counter_attack in parallelizable_attacks) and enable_parallelization
 
-            counter_attack_constructor = parse_attack_constructor(
-                counter_attack, counter_attack_p)
-            counter_attack = counter_attack_constructor(
-                foolbox_model, foolbox.criteria.Misclassification(),
-                distance_tools.LpDistance(counter_attack_p))
+            if not counter_attack_parallelization:
+                counter_attack_workers = 0
+
+            counter_attack = parse_attack(
+                counter_attack, counter_attack_p, foolbox_model, foolbox.criteria.Misclassification())
 
             counter_attack_options = dict(options)
 
             counter_attack_options['counter_attack'] = counter_attack
             counter_attack_options['counter_attack_p'] = counter_attack_p
             counter_attack_options['counter_attack_parallelization'] = counter_attack_parallelization
+            counter_attack_options['counter_attack_workers'] = counter_attack_workers
 
             return func(counter_attack_options, *args, **kwargs)
 
         parse_func = _parse_counter_attack_options
         if required:
-            parse_func = click.option('--counter-attack-p', default='inf', type=click.Choice(supported_ps),
-                                      help='The L_p distance of the counter-attack.')(parse_func)
             parse_func = click.argument(
                 'counter_attack', type=click.Choice(supported_attacks))(parse_func)
         else:
-            parse_func = click.option('--counter-attack-p', default='inf', type=click.Choice(supported_ps),
-                                      help='The L_p distance of the counter-attack (if required).')(parse_func)
             parse_func = click.option('--counter-attack', default='deepfool', type=click.Choice(supported_attacks),
                                       help='The counter-attack that will be used (if required).')(parse_func)
 
