@@ -47,7 +47,7 @@ class AdversarialDistance(DistanceTool):
 
     def get_distance(self, image):
         predictions = self.foolbox_model.predictions(image)
-        logger.info('Requested single distance estimate.')
+        logger.debug('Requested single distance estimate.')
 
         label = np.argmax(predictions)
 
@@ -57,10 +57,13 @@ class AdversarialDistance(DistanceTool):
             return self.failure_value
 
         distance = utils.lp_distance(adversarial, image, self.p, False)
+
+        logger.debug('Distance : {}'.format(distance))
+
         return distance
 
     def get_distances(self, images):
-        logger.info('Requested {} distance estimates'.format(len(images)))
+        logger.debug('Requested {} distance estimates'.format(len(images)))
 
         batch_predictions = self.foolbox_model.batch_predictions(images)
         labels = np.argmax(batch_predictions, axis=1)
@@ -101,6 +104,8 @@ class AdversarialDistance(DistanceTool):
 
         for i, original_index in enumerate(successful_adversarial_indices):
             distances[original_index] = successful_distances[i]
+
+        logger.debug('Distances: {}'.format(distances))
 
         return distances
 

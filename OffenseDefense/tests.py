@@ -61,21 +61,21 @@ def attack_test(foolbox_model: foolbox.models.Model,
 
     for images, labels in _get_iterator(name, loader):
         samples_count += len(images)
-        logger.info('Received {} images'.format(len(images)))
+        logger.debug('Received {} images'.format(len(images)))
 
         # Remove misclassified samples
         correct_images, correct_labels = batch_attack.get_correct_samples(
             foolbox_model, images, labels)
 
         correct_count += len(correct_images)
-        logger.info('{} correct images ({} removed)'.format(
+        logger.debug('{} correct images ({} removed)'.format(
             correct_count, samples_count - correct_count))
 
         successful_adversarials, successful_images, successful_labels = batch_attack.get_adversarials(
             foolbox_model, correct_images, correct_labels, attack, True, batch_worker, num_workers)
 
         successful_attack_count += len(successful_adversarials)
-        logger.info('{} successful attacks ({} removed)'.format(
+        logger.debug('{} successful attacks ({} removed)'.format(
             successful_attack_count, correct_count - successful_attack_count))
 
         # Update the distances and/or the adversarials (if there are successful adversarials)
@@ -116,15 +116,14 @@ def attack_test(foolbox_model: foolbox.models.Model,
     return samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths
 
 
-def shallow_detector_test(standard_model: foolbox.models.Model,
+def shallow_rejector_test(standard_model: foolbox.models.Model,
                           loader,
                           attack,
                           p,
-                          detector,
-                          threshold,
+                          rejector,
                           standard_batch_worker: batch_processing.BatchWorker = None,
                           num_workers: int = 50,
-                          name: str = 'Shallow Detector Attack'):
+                          name: str = 'Shallow Rejector Attack'):
     samples_count = 0
     correct_count = 0
     successful_attack_count = 0
@@ -139,7 +138,7 @@ def shallow_detector_test(standard_model: foolbox.models.Model,
 
         # Second step: Remove samples that are wrongfully detected as adversarial
         correct_images, correct_labels = batch_attack.get_approved_samples(
-            standard_model, correct_images, correct_labels, detector, threshold)
+            standard_model, correct_images, correct_labels, rejector)
 
         correct_count += len(correct_images)
         images, labels = correct_images, correct_labels
@@ -150,11 +149,10 @@ def shallow_detector_test(standard_model: foolbox.models.Model,
             standard_model, images, labels, attack, True, standard_batch_worker, num_workers)
 
         # Fourth step: Remove adversarial samples that are detected as such
-        scores = np.array(detector.get_scores(adversarials))
-        is_valid = scores >= threshold
-        adversarials = adversarials[is_valid]
-        images = images[is_valid]
-        labels = labels[is_valid]
+        batch_valid = rejector.batch_valid(adversarials)
+        adversarials = adversarials[batch_valid]
+        images = images[batch_valid]
+        labels = labels[batch_valid]
 
         successful_attack_count += len(adversarials)
 
@@ -245,8 +243,6 @@ def standard_detector_test(foolbox_model: foolbox.models.Model,
         if save_samples:
             genuine_samples += list(images)
         genuine_scores += list(detector.get_scores(images))
-
-        logger.debug('\n============\n')
 
     for adversarials, _ in _get_iterator(name + ' (Adversarial)', adversarial_loader):
         if save_samples:

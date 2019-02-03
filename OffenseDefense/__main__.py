@@ -15,11 +15,14 @@ import OffenseDefense.distance_tools as distance_tools
 import OffenseDefense.loaders as loaders
 import OffenseDefense.model_tools as model_tools
 import OffenseDefense.parsing as parsing
+import OffenseDefense.rejectors as rejectors
 import OffenseDefense.tests as tests
 import OffenseDefense.training as training
 import OffenseDefense.utils as utils
 
 logger = logging.getLogger('OffenseDefense')
+
+# TODO: Add rejector_options
 
 
 @click.group()
@@ -51,6 +54,7 @@ def attack(options, saved_dataset_path, no_test_warning):
         Adjusted Median Distance: The median L_p distance of the adversarial samples from their original samples, treating failed attacks as samples with distance Infinity.
     """
 
+    attack_p = options['attack_p']
     attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
@@ -58,7 +62,6 @@ def attack(options, saved_dataset_path, no_test_warning):
     dataset_type = options['dataset_type']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
-    p = options['p']
     results_path = options['results_path']
     torch_model = options['torch_model']
 
@@ -71,7 +74,7 @@ def attack(options, saved_dataset_path, no_test_warning):
         batch_worker = None
 
     attack = parsing.parse_attack(
-        attack_name, p, foolbox_model, criterion)
+        attack_name, attack_p, foolbox_model, criterion)
 
     save_adversarials = saved_dataset_path is not None
 
@@ -80,7 +83,7 @@ def attack(options, saved_dataset_path, no_test_warning):
                        'to train or calibrate an adversarial detector. You can disable this warning by passing '
                        '\'--no-test-warning\'.')
 
-    samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, p,
+    samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, attack_p,
                                                                                                                                   batch_worker, attack_workers, save_adversarials=save_adversarials)
 
     accuracy = correct_count / samples_count
@@ -149,7 +152,9 @@ def accuracy(options, top_ks):
 @parsing.pretrained_model_options
 @parsing.test_options('detect')
 @parsing.parallelization_options
-@parsing.detector_options(-np.Infinity)
+@parsing.distance_tool_options
+@parsing.counter_attack_options(False)
+@parsing.detector_options
 @parsing.adversarial_dataset_options
 @click.option('--saved_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
               help='The path to the .zip file where the scores will be saved with their corresponding images. If unspecified, no scores will be saved.')
@@ -164,6 +169,7 @@ def detect(options, saved_dataset_path, no_test_warning):
     command = options['command']
     dataset_type = options['dataset_type']
     detector = options['detector']
+    failure_value = options['failure_value']
     foolbox_model = options['foolbox_model']
     genuine_loader = options['loader']
     results_path = options['results_path']
@@ -209,7 +215,6 @@ def detect(options, saved_dataset_path, no_test_warning):
 
     if save_scores:
         # Remove failures
-        failure_value = -np.Infinity
 
         genuine_not_failed = np.not_equal(genuine_scores, failure_value)
         genuine_samples = genuine_samples[genuine_not_failed]
@@ -233,30 +238,32 @@ def defense():
     pass
 
 
-@defense.group(name='detector')
-def detector_defense():
+@defense.group(name='rejector')
+def rejector_defense():
     pass
 
 
-@detector_defense.command(name='shallow')
+@rejector_defense.command(name='shallow')
 @parsing.global_options
 @parsing.dataset_options('test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
-@parsing.test_options('defense/detector/shallow')
+@parsing.test_options('defense/rejector/shallow')
 @parsing.parallelization_options
-@parsing.detector_options(-np.Infinity)
 @parsing.attack_options(parsing.supported_attacks)
-@click.argument('threshold', type=float)
-def shallow_detector(options, threshold):
+@parsing.distance_tool_options
+@parsing.counter_attack_options(False)
+@parsing.detector_options
+@parsing.rejector_options
+def shallow_rejector(options):
     attack_name = options['attack_name']
     attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
     command = options['command']
-    detector = options['detector']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
-    p = options['p']
+    attack_p = options['attack_p']
+    rejector = options['rejector']
     results_path = options['results_path']
     torch_model = options['torch_model']
 
@@ -269,10 +276,10 @@ def shallow_detector(options, threshold):
 
     # The attack will be against the undefended model
     attack = parsing.parse_attack(
-        attack_name, p, foolbox_model, criterion)
+        attack_name, attack_p, foolbox_model, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances = tests.shallow_detector_test(
-        foolbox_model, loader, attack, p, detector, threshold, batch_worker, attack_workers)
+    samples_count, correct_count, successful_attack_count, distances = tests.shallow_rejector_test(
+        foolbox_model, loader, attack, attack_p, rejector, batch_worker, attack_workers)
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -293,41 +300,43 @@ def shallow_detector(options, threshold):
                        info=info, header=header)
 
 
-@detector_defense.command(name='black-box')
+@rejector_defense.command(name='black-box')
 @parsing.global_options
 @parsing.dataset_options('test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
-@parsing.test_options('defense/detector/black-box')
+@parsing.test_options('defense/rejector/black-box')
 @parsing.parallelization_options
-@parsing.detector_options(-np.Infinity)
 @parsing.attack_options(parsing.black_box_attacks)
-@click.argument('threshold', type=float)
-def black_box_detector(options, threshold):
+@parsing.distance_tool_options
+@parsing.counter_attack_options(False)
+@parsing.detector_options
+@parsing.rejector_options
+def black_box_rejector(options):
     attack_name = options['attack_name']
+    attack_p = options['attack_p']
     attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
     command = options['command']
-    detector = options['detector']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
-    p = options['p']
+    rejector = options['rejector']
     results_path = options['results_path']
 
-    # The defended_model returns [y1, y2 ... yN, undetected_value (-inf)] if it believes
+    # The defended_model returns [y1, y2 ... yN, -inf] if it believes
     # that the sample is valid, otherwise it returns [0, 0 ... 0, 1]
     # This means that if the top label is the last one, it was classified as adversarial.
-    # On a genuine dataset, this should never happen (if the detector is perfect).
+    # On a genuine dataset, this should never happen (if the rejector is perfect).
 
-    defended_model = detectors.CompositeDetectorModel(
-        foolbox_model, detector, threshold, undetected_value=-np.Infinity)
+    defended_model = rejectors.CompositeRejectorModel(
+        foolbox_model, rejector)
 
     # detectors.Undetected() adds the condition that the top label must not be the last
     # Note: foolbox.Criterion and foolbox.Criterion should give a combined criterion, but
     # apparently it doesn't work. The documentation recommends using "&"
 
     criterion = foolbox.criteria.CombinedCriteria(
-        foolbox.criteria.Misclassification(), detectors.Undetected())
+        foolbox.criteria.Misclassification(), rejectors.Unrejected())
 
     if attack_parallelization:
         defended_batch_worker = batch_attack.FoolboxWorker(defended_model)
@@ -336,10 +345,10 @@ def black_box_detector(options, threshold):
 
     # The attack will be against the defended model
     attack = parsing.parse_attack(
-        attack_name, p, defended_model, criterion)
+        attack_name, attack_p, defended_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        defended_model, loader, attack, p, defended_batch_worker, attack_workers, name='Black-Box Detector Attack')
+        defended_model, loader, attack, attack_p, defended_batch_worker, attack_workers, name='Black-Box Rejector Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -383,7 +392,7 @@ def shallow_model(options):
     device = options['device']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
-    p = options['p']
+    attack_p = options['attack_p']
     results_path = options['results_path']
     torch_model = options['torch_model']
 
@@ -396,10 +405,10 @@ def shallow_model(options):
 
     # The attack will be against the undefended model
     attack = parsing.parse_attack(
-        attack_name, p, foolbox_model, criterion)
+        attack_name, attack_p, foolbox_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_model_test(
-        foolbox_model, loader, attack, p, custom_foolbox_model, standard_batch_worker, attack_workers, name='Shallow Model Attack')
+        foolbox_model, loader, attack, attack_p, custom_foolbox_model, standard_batch_worker, attack_workers, name='Shallow Model Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -435,7 +444,7 @@ def black_box_model(options):
     custom_foolbox_model = options['custom_foolbox_model']
     device = options['device']
     loader = options['loader']
-    p = options['p']
+    attack_p = options['attack_p']
     results_path = options['results_path']
     custom_torch_model = options['custom_torch_model']
 
@@ -448,10 +457,10 @@ def black_box_model(options):
 
     # The attack will be against the defended (custom) model
     attack = parsing.parse_attack(
-        attack_name, p, custom_foolbox_model, criterion)
+        attack_name, attack_p, custom_foolbox_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        custom_foolbox_model, loader, attack, p, custom_batch_worker, attack_workers, name='Black-Box Model Attack')
+        custom_foolbox_model, loader, attack, attack_p, custom_batch_worker, attack_workers, name='Black-Box Model Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -494,7 +503,7 @@ def shallow_preprocessor(options):
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
-    p = options['p']
+    attack_p = options['attack_p']
     preprocessor = options['preprocessor']
     torch_model = options['torch_model']
 
@@ -507,12 +516,12 @@ def shallow_preprocessor(options):
 
     # The attack will be against the undefended model
     attack = parsing.parse_attack(
-        attack_name, p, foolbox_model, criterion)
+        attack_name, attack_p, foolbox_model, criterion)
 
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
-    samples_count, correct_count, successful_attack_count, distances = tests.shallow_model_test(foolbox_model, loader, attack, p,
+    samples_count, correct_count, successful_attack_count, distances = tests.shallow_model_test(foolbox_model, loader, attack, attack_p,
                                                                                                 defended_model, standard_batch_worker,
                                                                                                 attack_workers, name='Shallow Preprocessor Attack')
 
@@ -552,7 +561,7 @@ def black_box_preprocessor(options):
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
-    p = options['p']
+    attack_p = options['attack_p']
     preprocessor = options['preprocessor']
     torch_model = options['torch_model']
 
@@ -568,9 +577,9 @@ def black_box_preprocessor(options):
 
     # The attack will be against the defended model
     attack = parsing.parse_attack(
-        attack_name, p, defended_model, criterion)
+        attack_name, attack_p, defended_model, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(defended_model, loader, attack, p,
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(defended_model, loader, attack, attack_p,
                                                                                                defended_batch_worker,
                                                                                                attack_workers, name='Black-Box Preprocessor Attack')
 
@@ -599,7 +608,7 @@ def black_box_preprocessor(options):
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('parallelization')
-@parsing.set_parameters({'attack_parallelization': True})
+@parsing.set_parameters({'enable_parallelization': True})
 @parsing.attack_options(parsing.parallelizable_attacks)
 @click.option('--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
               help='The number of parallel workers that will be used to speed up the attack.')
@@ -611,7 +620,7 @@ def parallelization(options, attack_workers):
     attack_name = options['attack_name']
     command = options['command']
     foolbox_model = options['foolbox_model']
-    p = options['p']
+    attack_p = options['attack_p']
     results_path = options['results_path']
     loader = options['loader']
     torch_model = options['torch_model']
@@ -621,10 +630,10 @@ def parallelization(options, attack_workers):
     criterion = foolbox.criteria.Misclassification()
 
     attack = parsing.parse_attack(
-        attack_name, p, foolbox_model, criterion)
+        attack_name, attack_p, foolbox_model, criterion)
 
     samples_count, correct_count, standard_attack_count, parallel_attack_count, standard_distances, parallel_distances = tests.parallelization_test(
-        foolbox_model, loader, attack, p, batch_worker, attack_workers)
+        foolbox_model, loader, attack, attack_p, batch_worker, attack_workers)
 
     standard_failure_count = correct_count - standard_attack_count
     parallel_failure_count = correct_count - parallel_attack_count

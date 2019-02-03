@@ -179,20 +179,27 @@ def lp_distance(x, y, p, batch, broadcast=False):
 
 
 def filter_lists(condition, *lists):
-    final_lists = []
-    is_numpy = [isinstance(_list, np.ndarray) for _list in lists]
+    tuple_size = len(lists)
+    length = len(lists[0])
 
     for _list in lists:
-        final_lists.append([])
+        if len(_list) != length:
+            raise ValueError('All lists must have the same length.')
 
-    for _tuple in zip(*lists):
+    is_numpy = [isinstance(_list, np.ndarray) for _list in lists]
+
+    # Convert a tuple of lists into a list of tuples
+    list_of_tuples = list(zip(*lists))
+
+    final_lists = [list() for i in range(tuple_size)]
+    for _tuple in list_of_tuples:
         if(condition(*_tuple)):
             for i, value in enumerate(_tuple):
                 final_lists[i].append(value)
 
-    for i in range(len(lists)):
+    for i, _list in enumerate(lists):
         if is_numpy[i]:
-            final_lists[i] = np.array(i)
+            final_lists[i] = np.array(_list)
 
     return final_lists
 

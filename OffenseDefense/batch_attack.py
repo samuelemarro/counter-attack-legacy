@@ -206,15 +206,13 @@ def get_correct_samples(foolbox_model: foolbox.models.PyTorchModel,
 def get_approved_samples(foolbox_model: foolbox.models.PyTorchModel,
                          images: np.ndarray,
                          labels: np.ndarray,
-                         detector,
-                         threshold: float):
+                         rejector):
     _filter = utils.Filter()
     _filter['images'] = images
     _filter['image_labels'] = labels
 
-    scores = np.array(detector.get_scores(_filter['images']))
-    approved = scores >= threshold
-    approved_indices = np.nonzero(approved)[0]
+    batch_valid = rejector.batch_valid(_filter['images'])
+    approved_indices = np.nonzero(batch_valid)[0]
     _filter.filter(approved_indices, name='Approved')
 
     return _filter['images'], _filter['image_labels']

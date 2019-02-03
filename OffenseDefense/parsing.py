@@ -14,7 +14,7 @@ import tarfile
 import torch
 import torchvision
 
-from . import attacks, batch_attack, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, utils
+from . import attacks, batch_attack, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, rejectors, utils
 
 default_architecture_names = {
     'cifar10': 'densenet (depth=190, growth_rate=40)',
@@ -22,14 +22,18 @@ default_architecture_names = {
     'imagenet': 'densenet (depth=161, growth_rate=48)'
 }
 datasets = ['cifar10', 'cifar100', 'imagenet']
-supported_attacks = ['boundary', 'deepfool', 'fgsm']
-parallelizable_attacks = ['deepfool', 'fgsm']
 differentiable_attacks = ['deepfool', 'fgsm']
-black_box_attacks = [
-    x for x in supported_attacks if x not in differentiable_attacks]
+black_box_attacks = ['boundary']
+supported_attacks = differentiable_attacks + black_box_attacks
+
+parallelizable_attacks = ['deepfool', 'fgsm']
 
 supported_distance_tools = ['counter-attack']
-supported_detectors = list(supported_distance_tools)
+cache_distance_tools = ['counter-attack']
+supported_standard_detectors = []
+
+supported_detectors = supported_distance_tools + supported_standard_detectors
+
 supported_preprocessors = ['feature_squeezing', 'spatial_smoothing']
 
 supported_ps = ['2', 'inf']
@@ -309,7 +313,7 @@ def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs)
     if attack_name == 'deepfool':
         if p == 2:
             attack_constructor = foolbox.attacks.DeepFoolL2Attack
-        elif p == np.inf:
+        elif p == np.Infinity:
             attack_constructor = foolbox.attacks.DeepFoolLinfinityAttack
         else:
             raise ValueError('Deepfool supports L-2 and L-Infinity')
@@ -332,9 +336,9 @@ def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs)
     return attack
 
 
-def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
+def parse_distance_tool(tool_name, options, failure_value):
     counter_attack = options['counter_attack']
-    counter_attack_p = options['counter_attack_p']
+    defense_p = options['defense_p']
     counter_attack_workers = options['counter_attack_workers']
     foolbox_model = options['foolbox_model']
     counter_attack_parallelization = options['counter_attack_parallelization']
@@ -347,21 +351,18 @@ def parse_distance_tool(tool_name, options, failure_value=-np.Infinity):
 
             batch_worker = batch_attack.TorchWorker(torch_model)
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                               counter_attack_p, failure_value, batch_worker, counter_attack_workers)
+                                                               defense_p, failure_value, batch_worker, counter_attack_workers)
         else:
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                               counter_attack_p, failure_value)
+                                                               defense_p, failure_value)
     else:
         raise ValueError('Distance tool not supported.')
 
     return distance_tool
 
 
-def parse_detector(detector, options, failure_value=-np.Infinity):
-    if detector in supported_distance_tools:
-        return detectors.DistanceDetector(parse_distance_tool(detector, options, failure_value))
-    else:
-        raise ValueError('Detector not supported.')
+def parse_standard_detector(detector, options, failure_value):
+    raise ValueError('Standard detector not supported.')
 
 
 def parse_preprocessor(preprocessor, options):
@@ -532,7 +533,7 @@ def custom_model_options(func):
         # NXOR between custom_weights and custom_architecture
         if (custom_state_dict_path is None) == (custom_model_path is None):
             raise click.BadOptionUsage(
-                'You must pass either \'--custom-state-dict-path [PATH]\' or \'custom-model-path [PATH]\' (but not both).')
+                'You must pass either \'--custom-state-dict-path [PATH]\' or \'--custom-model-path [PATH]\' (but not both).')
 
         if custom_model_path is None:
             custom_torch_model = _get_torch_model(dataset)
@@ -711,16 +712,12 @@ def parallelization_options(func):
 def attack_options(attacks):
     def _attack_options(func):
         @click.argument('attack', type=click.Choice(attacks))
-        @click.option('--p', default='inf', show_default=True, type=click.Choice(supported_ps),
-                      help='The L_p distance of the attack.')
+        @click.argument('attack_p', type=click.Choice(supported_ps))
         @functools.wraps(func)
-        def _parse_attack_options(options, attack, p, *args, **kwargs):
+        def _parse_attack_options(options, attack, attack_p, *args, **kwargs):
             enable_parallelization = options['enable_parallelization']
 
-            if p == '2':
-                p = 2
-            elif p == 'inf':
-                p = np.inf
+            attack_p = float(attack_p)
 
             attack_parallelization = enable_parallelization and attack in parallelizable_attacks
 
@@ -729,7 +726,7 @@ def attack_options(attacks):
             # We don't immediately parse 'attack' because every test needs a specific configuration
             attack_options['attack_name'] = attack
             attack_options['enable_parallelization'] = enable_parallelization
-            attack_options['p'] = p
+            attack_options['attack_p'] = attack_p
             attack_options['attack_parallelization'] = attack_parallelization
 
             return func(attack_options, *args, **kwargs)
@@ -737,19 +734,30 @@ def attack_options(attacks):
     return _attack_options
 
 
+def distance_tool_options(func):
+    @click.argument('defense_p', type=click.Choice(supported_ps))
+    @functools.wraps(func)
+    def _parse_distance_tool_options(options, defense_p, *args, **kwargs):
+        defense_p = float(defense_p)
+
+        distance_tool_options = dict(options)
+
+        distance_tool_options['defense_p'] = defense_p
+
+        return func(distance_tool_options, *args, **kwargs)
+    return _parse_distance_tool_options
+
+
 def counter_attack_options(required):
     def _counter_attack_options(func):
-        @click.option('--counter-attack-p', default='inf', type=click.Choice(supported_ps),
-                      help='The L_p distance of the counter-attack.')
         @click.option('--counter-attack-workers', default=None, type=click.IntRange(1, None),
                       help='The number of attack workers of the counter attack. If unspecified, it defaults to the number of attack workers.')
         @functools.wraps(func)
-        def _parse_counter_attack_options(options, counter_attack, counter_attack_p, counter_attack_workers, *args, **kwargs):
+        def _parse_counter_attack_options(options, counter_attack, counter_attack_workers, *args, **kwargs):
             attack_workers = options['attack_workers']
             foolbox_model = options['foolbox_model']
             enable_parallelization = options['enable_parallelization']
-
-            counter_attack_p = float(counter_attack_p)
+            defense_p = options['defense_p']
 
             if counter_attack_workers is None:
                 counter_attack_workers = attack_workers
@@ -761,12 +769,11 @@ def counter_attack_options(required):
                 counter_attack_workers = 0
 
             counter_attack = parse_attack(
-                counter_attack, counter_attack_p, foolbox_model, foolbox.criteria.Misclassification())
+                counter_attack, defense_p, foolbox_model, foolbox.criteria.Misclassification())
 
             counter_attack_options = dict(options)
 
             counter_attack_options['counter_attack'] = counter_attack
-            counter_attack_options['counter_attack_p'] = counter_attack_p
             counter_attack_options['counter_attack_parallelization'] = counter_attack_parallelization
             counter_attack_options['counter_attack_workers'] = counter_attack_workers
 
@@ -784,22 +791,98 @@ def counter_attack_options(required):
     return _counter_attack_options
 
 
-def detector_options(failure_value):
-    def _detector_options(func):
-        @click.argument('detector', type=click.Choice(supported_detectors))
-        @counter_attack_options(False)
-        @functools.wraps(func)
-        def _parse_detector_options(options, detector, *args, **kwargs):
-            detector_options = dict(options)
+def detector_options(func):
+    @click.argument('detector', type=click.Choice(supported_detectors))
+    @click.option('--reject-on-failure', type=bool, default=True, show_default=True,
+                  help='If True, samples for which the detector cannot compute the score will be rejected. If False, they will be accepted.')
+    @click.option('--cache-size', type=click.IntRange(0, None), default=0, show_default=True,
+                  help='The size of the distance tool cache. 0 disables caching.')
+    @functools.wraps(func)
+    def _parse_detector_options(options, detector, reject_on_failure, cache_size, *args, **kwargs):
 
-            # detector must be parsed last
-            detector = parse_detector(
-                detector, detector_options, failure_value)
-            detector_options['detector'] = detector
+        # To avoid confusion
+        detector_name = detector
+        del detector
 
-            return func(detector_options, *args, **kwargs)
-        return _parse_detector_options
-    return _detector_options
+        if reject_on_failure:
+            failure_value = -np.Infinity
+        else:
+            failure_value = np.Infinity
+
+        if detector_name in supported_distance_tools:
+            logger.debug('The detector is a distance tool.')
+            detector_type = 'distance'
+
+            if cache_size == 0:
+                logger.debug('Caching disabled.')
+                enable_caching = False
+            else:
+                if detector_name in cache_distance_tools:
+                    logger.debug('Caching enabled')
+                    enable_caching = True
+                else:
+                    logger.debug(
+                        'Caching is enabled, but the distance tool does not support it.')
+                    enable_caching = False
+
+            distance_tool = parse_distance_tool(
+                detector_name, options, failure_value)
+            detector = detectors.DistanceDetector(distance_tool)
+
+        elif detector_name in supported_standard_detectors:
+            logger.debug('The detector a standard detector.')
+            detector_type = 'standard'
+
+            enable_caching = False
+            distance_tool = None
+            detector = parse_standard_detector(
+                detector_name, options, failure_value)
+        else:
+            raise ValueError('Detector not supported.')
+
+        detector_options = dict(options)
+
+        detector_options['cache_size'] = cache_size
+        detector_options['detector'] = detector
+        detector_options['detector_name'] = detector_name
+        detector_options['detector_type'] = detector_type
+        detector_options['distance_tool'] = distance_tool
+        detector_options['enable_caching'] = enable_caching
+        detector_options['failure_value'] = failure_value
+
+        return func(detector_options, *args, **kwargs)
+    return _parse_detector_options
+
+
+def rejector_options(func):
+    @click.argument('threshold', type=float)
+    @functools.wraps(func)
+    def _parse_rejector_options(options, threshold, *args, **kwargs):
+        cache_size = options['cache_size']
+        defense_p = options['defense_p']
+        detector = options['detector']
+        detector_type = options['detector_type']
+        distance_tool = options['distance_tool']
+        enable_caching = options['enable_caching']
+
+        if enable_caching:
+            assert detector_type == 'distance'
+            assert distance_tool is not None
+
+            rejector = rejectors.CacheRejector(
+                distance_tool, threshold, defense_p, cache_size)
+
+        else:
+            rejector = rejectors.DetectorRejector(detector, threshold)
+
+        rejector_options = dict(options)
+
+        rejector_options['rejector'] = rejector
+        rejector_options['threshold'] = threshold
+
+        return func(rejector_options, *args, **kwargs)
+
+    return _parse_rejector_options
 
 
 def preprocessor_options(func):
