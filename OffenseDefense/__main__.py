@@ -22,7 +22,9 @@ import OffenseDefense.utils as utils
 
 logger = logging.getLogger('OffenseDefense')
 
-# TODO: Add rejector_options
+# TODO: Train_model must support preprocessing
+# TODO: Test preprocessing options
+# TODO: Preprocessing (mean/stdev) and preprocessor (e.g. depth reduction are too similar)
 
 
 @click.group()
@@ -490,6 +492,7 @@ def preprocessor_defense():
 @parsing.preprocessor_options
 @parsing.attack_options(parsing.supported_attacks)
 def shallow_preprocessor(options):
+    attack_p = options['attack_p']
     attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
@@ -497,7 +500,6 @@ def shallow_preprocessor(options):
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
-    attack_p = options['attack_p']
     preprocessor = options['preprocessor']
     torch_model = options['torch_model']
 
@@ -537,6 +539,65 @@ def shallow_preprocessor(options):
     utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header)
 
+@preprocessor_defense.command(name='substitute')
+@parsing.global_options
+@parsing.dataset_options('test')
+@parsing.standard_model_options
+@parsing.pretrained_model_options
+@parsing.test_options('defense/preprocessor/substitute')
+@parsing.parallelization_options
+@parsing.preprocessor_options
+@parsing.attack_options(parsing.black_box_attacks)
+@parsing.substitute_options
+def substitute_preprocessor(options):
+    attack_p = options['attack_p']
+    attack_parallelization = options['attack_parallelization']
+    attack_name = options['attack_name']
+    attack_workers = options['attack_workers']
+    command = options['command']
+    foolbox_model = options['foolbox_model']
+    loader = options['loader']
+    results_path = options['results_path']
+    preprocessor = options['preprocessor']
+    substitute_foolbox_model = options['substitute_foolbox_model']
+
+    defended_model = defenses.PreprocessorDefenseModel(
+        foolbox_model, preprocessor)
+
+    composite_model = foolbox.models.CompositeModel(defended_model, substitute_foolbox_model)
+
+    if attack_parallelization:
+        defended_batch_worker = batch_attack.FoolboxWorker(composite_model)
+    else:
+        defended_batch_worker = None
+
+    criterion = foolbox.criteria.Misclassification()
+
+    # The attack will be against the defended model with composite gradients
+    attack = parsing.parse_attack(
+        attack_name, attack_p, composite_model, criterion)
+
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_p,
+                                                                                               defended_batch_worker,
+                                                                                               attack_workers, name='Substitute Preprocessor Attack')
+
+    accuracy = correct_count / samples_count
+    success_rate = successful_attack_count / correct_count
+
+    info = [
+        ['Base Accuracy', '{:2.2f}%'.format(
+            accuracy * 100.0)],
+        ['Base Attack Success Rate', '{:2.2f}%'.format(
+            success_rate * 100.0)],
+        ['Samples Count', str(samples_count)],
+        ['Correct Count', str(correct_count)],
+        ['Successful Attack Count', str(successful_attack_count)]
+    ]
+
+    header = ['Distances']
+
+    utils.save_results(results_path, table=[distances], command=command,
+                       info=info, header=header)
 
 @preprocessor_defense.command(name='black-box')
 @parsing.global_options
@@ -725,7 +786,7 @@ def train_approximator(options, loss, trained_approximator_path):
     training.train_torch(torch_model, loader, loss,
                          optimizer, epochs, cuda, classification=False)
 
-    model_tools.save_state_dict(torch_model, trained_approximator_path)
+    torch.save(torch_model, trained_approximator_path)
 
 
 if __name__ == '__main__':

@@ -44,3 +44,17 @@ def load_state_dict(base_model, path, training_model, data_parallel):
 def save_state_dict(model, path):
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), path)
+
+def has_preprocessing(module):
+    assert isinstance(module, torch.nn.Module)
+
+    if isinstance(module, Preprocessing):
+        return True
+
+    for _module in module.modules():
+        assert isinstance(_module, torch.nn.Module)
+
+        if isinstance(_module, Preprocessing):
+            return True
+
+    return False

@@ -519,7 +519,7 @@ def custom_model_options(func):
     @click.option('--custom-state-dict-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
     @click.option('--custom-model-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
     @click.option('--preprocessing', default=None,
-                  help='The preprocessing that will be applied to the data. Supports both dataset names ({}) and '
+                  help='The preprocessing that will be applied by the custom model. Supports both dataset names ({}) and '
                   'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(','.join(datasets)))
     @functools.wraps(func)
     def _parse_custom_model_options(options, custom_state_dict_path, custom_model_path, preprocessing, *args, **kwargs):
@@ -542,11 +542,17 @@ def custom_model_options(func):
         else:
             custom_torch_model = torch.load(custom_model_path)
 
-        if preprocessing is None:
-            logger.warning('You are not applying any preprocessing to your data. '
+        has_preprocessing = model_tools.has_preprocessing(custom_torch_model)
+
+        if not has_preprocessing and preprocessing is None:
+            logger.warning('You are not applying any mean/stdev preprocessing to your data. '
                            'You can specify it by passing --preprocessing DATASET '
                            'or --preprocessing "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
-        else:
+
+        if has_preprocessing and preprocessing is not None:
+            logger.warning('You are applying mean/stdev preprocessing multiple times.')
+
+        if preprocessing is not None:
             try:
                 if preprocessing in datasets:
                     preprocessing = _get_preprocessing(preprocessing)
@@ -558,7 +564,8 @@ def custom_model_options(func):
                         values[4]), float(values[5])
                     preprocessing = model_tools.Preprocessing(means, stdevs)
             except:
-                raise click.BadOptionUsage('Invalid preprocessing format.')
+                raise click.BadOptionUsage('Invalid custom model preprocessing format.')
+
             custom_torch_model = torch.nn.Sequential(
                 preprocessing, custom_torch_model)
 
@@ -940,13 +947,45 @@ def adversarial_dataset_options(func):
 
 def substitute_options(func):
     @click.argument('substitute_model_path', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+    @click.option('--substitute-preprocessing', default=None,
+                  help='The preprocessing that will be applied by the substitute model. Supports both dataset names ({}) and '
+                  'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(','.join(datasets)))
     @functools.wraps(func)
-    def _parse_substitute_options(options, substitute_model_path, *args, **kwargs):
+    def _parse_substitute_options(options, substitute_model_path, substitute_preprocessing, *args, **kwargs):
         cuda = options['cuda']
         device = options['device']
         num_classes = options['num_classes']
 
         substitute_torch_model = torch.load(substitute_model_path)
+
+        has_preprocessing = model_tools.has_preprocessing(substitute_torch_model)
+
+        if not has_preprocessing and substitute_preprocessing is None:
+            logger.warning('You are not applying any mean/stdev preprocessing to your data. '
+                           'You can specify it by passing --preprocessing DATASET '
+                           'or --preprocessing "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
+
+        if has_preprocessing and substitute_preprocessing is not None:
+            logger.warning('You are applying mean/stdev preprocessing multiple times.')
+
+        if substitute_preprocessing is not None:
+            try:
+                if substitute_preprocessing in datasets:
+                    substitute_preprocessing = _get_preprocessing(substitute_preprocessing)
+                else:
+                    values = substitute_preprocessing.split(' ')
+                    means = float(values[0]), float(
+                        values[1]), float(values[2])
+                    stdevs = float(values[3]), float(
+                        values[4]), float(values[5])
+                    substitute_preprocessing = model_tools.Preprocessing(means, stdevs)
+            except:
+                raise click.BadOptionUsage('Invalid substitute model preprocessing format.')
+
+            substitute_torch_model = torch.nn.Sequential(
+                substitute_preprocessing, substitute_torch_model)
+
+        substitute_torch_model.eval()
 
         if cuda:
             substitute_torch_model.cuda()
