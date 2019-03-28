@@ -68,8 +68,7 @@ def attack(options, saved_dataset_path, no_test_warning):
     criterion = foolbox.criteria.Misclassification()
 
     if attack_parallelization:
-        batch_worker = batch_attack.TorchWorker(
-            torch_model)
+        batch_worker = batch_attack.TorchWorker(torch_model)
     else:
         batch_worker = None
 
@@ -135,7 +134,6 @@ def accuracy(options, top_ks):
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
-    torch_model = options['torch_model']
 
     accuracies = tests.accuracy_test(
         foolbox_model, loader, top_ks)
@@ -173,8 +171,6 @@ def detect(options, saved_dataset_path, no_test_warning):
     foolbox_model = options['foolbox_model']
     genuine_loader = options['loader']
     results_path = options['results_path']
-    shuffle = options['shuffle']
-    torch_model = options['torch_model']
 
     save_scores = saved_dataset_path is not None
 
@@ -389,7 +385,6 @@ def shallow_model(options):
     attack_workers = options['attack_workers']
     command = options['command']
     custom_foolbox_model = options['custom_foolbox_model']
-    device = options['device']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     attack_p = options['attack_p']
@@ -442,7 +437,6 @@ def black_box_model(options):
     attack_workers = options['attack_workers']
     command = options['command']
     custom_foolbox_model = options['custom_foolbox_model']
-    device = options['device']
     loader = options['loader']
     attack_p = options['attack_p']
     results_path = options['results_path']
@@ -563,7 +557,6 @@ def black_box_preprocessor(options):
     results_path = options['results_path']
     attack_p = options['attack_p']
     preprocessor = options['preprocessor']
-    torch_model = options['torch_model']
 
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
@@ -678,7 +671,6 @@ def parallelization(options, attack_workers):
 @click.option('--trained-model-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
               help='The path to the file where the model will be saved. If unspecified, it defaults to \'./train_model/$dataset$ $start_time$.pth.tar\'')
 def train_model(options, trained_model_path):
-    command = options['command']
     cuda = options['cuda']
     dataset = options['dataset']
     epochs = options['epochs']

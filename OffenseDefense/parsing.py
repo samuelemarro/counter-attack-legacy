@@ -451,9 +451,7 @@ def global_options(func):
 def standard_model_options(func):
     @functools.wraps(func)
     def _parse_standard_model_options(options, *args, **kwargs):
-        cuda = options['cuda']
         dataset = options['dataset']
-        num_classes = options['num_classes']
 
         base_model = _get_torch_model(dataset)
 
@@ -604,7 +602,7 @@ def dataset_options(recommended):
                 data_folder = './data/genuine/' + dataset
 
             if dataset_type != recommended:
-                logger.warning('You are using the {} dataset. We recommend using the {} for this command.'.format(
+                logger.warning('You are using the {} dataset. We recommend using the {} dataset for this command.'.format(
                     dataset_type, recommended))
 
             train_loader, test_loader = _get_genuine_loaders(
@@ -939,3 +937,28 @@ def adversarial_dataset_options(func):
         return func(adversarial_dataset_options, *args, **kwargs)
 
     return _parse_adversarial_dataset_options
+
+def substitute_options(func):
+    @click.argument('substitute_model_path', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+    @functools.wraps(func)
+    def _parse_substitute_options(options, substitute_model_path, *args, **kwargs):
+        cuda = options['cuda']
+        device = options['device']
+        num_classes = options['num_classes']
+
+        substitute_torch_model = torch.load(substitute_model_path)
+
+        if cuda:
+            substitute_torch_model.cuda()
+
+        substitute_foolbox_model = foolbox.models.PyTorchModel(
+            substitute_torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
+
+        substitute_options = dict(options)
+        substitute_options['substitute_foolbox_model'] = substitute_foolbox_model
+        substitute_options['substitute_torch_model'] = substitute_torch_model
+
+        return func(substitute_options, *args, **kwargs)
+    
+    return _parse_substitute_options
+

@@ -234,6 +234,9 @@ def standard_detector_test(foolbox_model: foolbox.models.Model,
                            detector: detectors.Detector,
                            save_samples: bool,
                            name: str = 'Detection Test'):
+    """
+        Computes the ROC of a shallow detector.
+    """
     genuine_samples = [] if save_samples else None
     genuine_scores = []
     adversarial_samples = [] if save_samples else None

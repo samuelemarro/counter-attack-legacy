@@ -31,6 +31,7 @@ class DetectorRejector(Rejector):
 
         return detector_scores >= self.threshold
 
+#TODO: Check the cache
 
 class CacheRejector(Rejector):
     def __init__(self, distance_tool, threshold, p, cache_size):

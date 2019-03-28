@@ -12,7 +12,6 @@ def train_torch(model, loader, loss_fn, optimizer, epochs, use_cuda, classificat
     model.train()
 
     epoch = 0
-    proceed = True
 
     top1_accuracy = None
     top5_accuracy = None
@@ -44,7 +43,7 @@ def train_torch(model, loader, loss_fn, optimizer, epochs, use_cuda, classificat
 
             if use_cuda:
                 torch_images = torch_images.cuda()
-                torch_targets = torch_targets.cuda(async=True)
+                torch_targets = torch_targets.cuda()
 
             # Compute the outputs
             outputs = model(torch_images)
