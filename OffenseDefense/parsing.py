@@ -261,8 +261,8 @@ def _get_pretrained_torch_model(dataset: str, base_model: torch.nn.Module, path:
     return model
 
 
-def _get_preprocessing(dataset: str) -> model_tools.Preprocessing:
-    """Returns the preprocessing for a given dataset.
+def _get_normalisation(dataset: str) -> model_tools.Normalisation:
+    """Returns the normalisation for a given dataset.
 
     Parameters
     ----------
@@ -277,13 +277,13 @@ def _get_preprocessing(dataset: str) -> model_tools.Preprocessing:
 
     Returns
     -------
-    model_tools.Preprocessing
-        The Preprocessing model with the means and standard
+    model_tools.Normalisation
+        The Normalisation module with the means and standard
         deviations for the given dataset.
     """
 
     if dataset in ['cifar10', 'cifar100']:
-        # The pretrained CIFAR models use the same preprocessing
+        # The pretrained CIFAR models use the same normalisation
         # for both versions
         means = (0.4914, 0.4822, 0.4465)
         stds = (0.2023, 0.1994, 0.2010)
@@ -293,7 +293,7 @@ def _get_preprocessing(dataset: str) -> model_tools.Preprocessing:
     else:
         raise ValueError('Dataset not supported.')
 
-    return model_tools.Preprocessing(means, stds)
+    return model_tools.Normalisation(means, stds)
 
 
 def _get_num_classes(dataset):
@@ -464,7 +464,7 @@ def standard_model_options(func):
 
 def pretrained_model_options(func):
     """
-    Loads the pretrained weights, adds the preprocessing and saves
+    Loads the pretrained weights and saves
     the model in foolbox and torch format.
 
     Requires:
@@ -496,7 +496,7 @@ def pretrained_model_options(func):
         torch_model = _get_pretrained_torch_model(
             dataset, base_model, state_dict_path, download_model)
         torch_model = torch.nn.Sequential(
-            _get_preprocessing(dataset), torch_model)
+            _get_normalisation(dataset), torch_model)
 
         torch_model.eval()
 
@@ -518,11 +518,11 @@ def pretrained_model_options(func):
 def custom_model_options(func):
     @click.option('--custom-state-dict-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
     @click.option('--custom-model-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
-    @click.option('--preprocessing', default=None,
-                  help='The preprocessing that will be applied by the custom model. Supports both dataset names ({}) and '
-                  'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(','.join(datasets)))
+    @click.option('--custom-model-normalisation', default=None,
+                  help='The normalisation that will be applied by the custom model. Supports both dataset names ({}) and '
+                  'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(', '.join(datasets)))
     @functools.wraps(func)
-    def _parse_custom_model_options(options, custom_state_dict_path, custom_model_path, preprocessing, *args, **kwargs):
+    def _parse_custom_model_options(options, custom_state_dict_path, custom_model_path, custom_model_normalisation, *args, **kwargs):
         cuda = options['cuda']
         dataset = options['dataset']
         device = options['device']
@@ -530,7 +530,7 @@ def custom_model_options(func):
 
         # NXOR between custom_weights and custom_architecture
         if (custom_state_dict_path is None) == (custom_model_path is None):
-            raise click.BadOptionUsage(
+            raise click.BadOptionUsage('--custom-state-dict-path',
                 'You must pass either \'--custom-state-dict-path [PATH]\' or \'--custom-model-path [PATH]\' (but not both).')
 
         if custom_model_path is None:
@@ -542,32 +542,32 @@ def custom_model_options(func):
         else:
             custom_torch_model = torch.load(custom_model_path)
 
-        has_preprocessing = model_tools.has_preprocessing(custom_torch_model)
+        has_normalisation = model_tools.has_normalisation(custom_torch_model)
 
-        if not has_preprocessing and preprocessing is None:
-            logger.warning('You are not applying any mean/stdev preprocessing to your data. '
-                           'You can specify it by passing --preprocessing DATASET '
-                           'or --preprocessing "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
+        if not has_normalisation and custom_model_normalisation is None:
+            logger.warning('You are not applying any mean/stdev normalisation to your custom model. '
+                           'You can specify it by passing --custom-model-normalisation DATASET '
+                           'or --custom-model-normalisation "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
 
-        if has_preprocessing and preprocessing is not None:
-            logger.warning('You are applying mean/stdev preprocessing multiple times.')
+        if has_normalisation and custom_model_normalisation is not None:
+            logger.warning('You are applying mean/stdev normalisation to the custom model multiple times.')
 
-        if preprocessing is not None:
+        if custom_model_normalisation is not None:
             try:
-                if preprocessing in datasets:
-                    preprocessing = _get_preprocessing(preprocessing)
+                if custom_model_normalisation in datasets:
+                    custom_model_normalisation = _get_normalisation(custom_model_normalisation)
                 else:
-                    values = preprocessing.split(' ')
+                    values = custom_model_normalisation.split(' ')
                     means = float(values[0]), float(
                         values[1]), float(values[2])
                     stdevs = float(values[3]), float(
                         values[4]), float(values[5])
-                    preprocessing = model_tools.Preprocessing(means, stdevs)
+                    custom_model_normalisation = model_tools.Normalisation(means, stdevs)
             except:
-                raise click.BadOptionUsage('Invalid custom model preprocessing format.')
+                raise click.BadOptionUsage('--custom-model-normalisation', 'Invalid normalisation format for the custom model.')
 
             custom_torch_model = torch.nn.Sequential(
-                preprocessing, custom_torch_model)
+                custom_model_normalisation, custom_torch_model)
 
         custom_torch_model.eval()
 
@@ -947,43 +947,43 @@ def adversarial_dataset_options(func):
 
 def substitute_options(func):
     @click.argument('substitute_model_path', type=click.Path(exists=True, file_okay=False, dir_okay=True))
-    @click.option('--substitute-preprocessing', default=None,
-                  help='The preprocessing that will be applied by the substitute model. Supports both dataset names ({}) and '
-                  'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(','.join(datasets)))
+    @click.option('--substitute-normalisation', default=None,
+                  help='The normalisation that will be applied by the substitute model. Supports both dataset names ({}) and '
+                  'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(', '.join(datasets)))
     @functools.wraps(func)
-    def _parse_substitute_options(options, substitute_model_path, substitute_preprocessing, *args, **kwargs):
+    def _parse_substitute_options(options, substitute_model_path, substitute_normalisation, *args, **kwargs):
         cuda = options['cuda']
         device = options['device']
         num_classes = options['num_classes']
 
         substitute_torch_model = torch.load(substitute_model_path)
 
-        has_preprocessing = model_tools.has_preprocessing(substitute_torch_model)
+        has_normalisation = model_tools.has_normalisation(substitute_torch_model)
 
-        if not has_preprocessing and substitute_preprocessing is None:
-            logger.warning('You are not applying any mean/stdev preprocessing to your data. '
-                           'You can specify it by passing --preprocessing DATASET '
-                           'or --preprocessing "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
+        if not has_normalisation and substitute_normalisation is None:
+            logger.warning('You are not applying any mean/stdev normalisation to your data. '
+                           'You can specify it by passing --substitute-normalisation DATASET '
+                           'or --substitute-normalisation "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
 
-        if has_preprocessing and substitute_preprocessing is not None:
-            logger.warning('You are applying mean/stdev preprocessing multiple times.')
+        if has_normalisation and substitute_normalisation is not None:
+            logger.warning('You are applying mean/stdev normalisation to the substitute model multiple times.')
 
-        if substitute_preprocessing is not None:
+        if substitute_normalisation is not None:
             try:
-                if substitute_preprocessing in datasets:
-                    substitute_preprocessing = _get_preprocessing(substitute_preprocessing)
+                if substitute_normalisation in datasets:
+                    substitute_normalisation = _get_normalisation(substitute_normalisation)
                 else:
-                    values = substitute_preprocessing.split(' ')
+                    values = substitute_normalisation.split(' ')
                     means = float(values[0]), float(
                         values[1]), float(values[2])
                     stdevs = float(values[3]), float(
                         values[4]), float(values[5])
-                    substitute_preprocessing = model_tools.Preprocessing(means, stdevs)
+                    substitute_normalisation = model_tools.Normalisation(means, stdevs)
             except:
-                raise click.BadOptionUsage('Invalid substitute model preprocessing format.')
+                raise click.BadOptionUsage('--substitute-normalisation', 'Invalid normalisation format for the substitute model.')
 
             substitute_torch_model = torch.nn.Sequential(
-                substitute_preprocessing, substitute_torch_model)
+                substitute_normalisation, substitute_torch_model)
 
         substitute_torch_model.eval()
 

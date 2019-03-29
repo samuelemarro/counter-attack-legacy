@@ -22,9 +22,8 @@ import OffenseDefense.utils as utils
 
 logger = logging.getLogger('OffenseDefense')
 
-# TODO: Train_model must support preprocessing
+# TODO: Logging does not output to console
 # TODO: Test preprocessing options
-# TODO: Preprocessing (mean/stdev) and preprocessor (e.g. depth reduction are too similar)
 
 
 @click.group()
@@ -80,7 +79,7 @@ def attack(options, saved_dataset_path, no_test_warning):
     save_adversarials = saved_dataset_path is not None
 
     if dataset_type == 'test' and save_adversarials and not no_test_warning:
-        logger.warning('Remember to use \'-dt train\' if you plan to use the generated adversarials '
+        logger.warning('Remember to use \'--dataset-type train\' if you plan to use the generated adversarials '
                        'to train or calibrate an adversarial detector. You can disable this warning by passing '
                        '\'--no-test-warning\'.')
 
@@ -177,7 +176,7 @@ def detect(options, saved_dataset_path, no_test_warning):
     save_scores = saved_dataset_path is not None
 
     if dataset_type == 'test' and not no_test_warning:
-        logger.warning('Remember to use \'-dt train\' if you plan to use the results '
+        logger.warning('Remember to use \'-dataset-type train\' if you plan to use the results '
                        'to pick a threshold for other tests. You can disable this warning by passing '
                        '\'--no-test-warning\'.')
 
@@ -757,10 +756,10 @@ def train_model(options, trained_model_path):
 @main.command()
 @parsing.global_options
 @parsing.train_options
-@click.option('--loss', type=click.Choice(['l1', 'l2', 'smooth_l1']), default='l2', show_default=True)
+@click.argument('target_model_predictions_path', type=click.Path(file_okay=True, dir_okay=False))
 @click.option('--trained-approximator-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
               help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./train_approximator/$dataset$ $start_time$.pth.tar\'')
-def train_approximator(options, loss, trained_approximator_path):
+def train_approximator(options, target_model_path, trained_approximator_path):
     cuda = options['cuda']
     dataset = options['dataset']
     detector = options['detector']
@@ -774,17 +773,9 @@ def train_approximator(options, loss, trained_approximator_path):
         trained_approximator_path = parsing.get_training_default_path(
             'train_approximator', dataset, start_time)
 
-    if loss == 'l1':
-        loss = torch.nn.L1Loss()
-    elif loss == 'l2':
-        loss = torch.nn.MSELoss()
-    elif loss == 'smooth_l1':
-        loss = torch.nn.SmoothL1Loss()
-    else:
-        raise ValueError('Loss not supported.')
 
-    training.train_torch(torch_model, loader, loss,
-                         optimizer, epochs, cuda, classification=False)
+    training.train_torch(torch_model, loader, torch.nn.CrossEntropyLoss(),
+                         optimizer, epochs, cuda, classification=True)
 
     torch.save(torch_model, trained_approximator_path)
 

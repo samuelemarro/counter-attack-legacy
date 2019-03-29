@@ -10,9 +10,9 @@ import numpy as np
 from . import utils
 
 
-class Preprocessing(torch.nn.Module):
+class Normalisation(torch.nn.Module):
     def __init__(self, means, stdevs):
-        super(Preprocessing, self).__init__()
+        super().__init__()
         self.means = torch.from_numpy(np.array(means).reshape((3, 1, 1)))
         self.stdevs = torch.from_numpy(np.array(stdevs).reshape((3, 1, 1)))
 
@@ -45,16 +45,16 @@ def save_state_dict(model, path):
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), path)
 
-def has_preprocessing(module):
+def has_normalisation(module):
     assert isinstance(module, torch.nn.Module)
 
-    if isinstance(module, Preprocessing):
+    if isinstance(module, Normalisation):
         return True
 
     for _module in module.modules():
         assert isinstance(_module, torch.nn.Module)
 
-        if isinstance(_module, Preprocessing):
+        if isinstance(_module, Normalisation):
             return True
 
     return False
