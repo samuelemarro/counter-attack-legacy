@@ -176,12 +176,16 @@ def _get_genuine_loaders(dataset, path, batch_size, shuffle, num_workers, downlo
 
 
 def _download_pretrained_model(dataset, path):
+    logger.info('Downloading pretrained model.')
     if dataset in ['cifar10', 'cifar100']:
         utils.download_from_config(
             'config.ini', path, 'model_links', dataset)
     elif dataset == 'imagenet':
         model = torchvision.models.densenet161(pretrained=True)
-        model_tools.save_state_dict(model, path)
+
+        # We save the model structure, too
+        # model_tools.save_state_dict(model, path)
+        torch.save(model, path)
     else:
         raise ValueError('Dataset not supported.')
 
@@ -248,16 +252,24 @@ def _get_pretrained_torch_model(dataset: str, base_model: torch.nn.Module, path:
     torch.nn.Module
         The pretrained Torch model for the given dataset.
     """
-    model = _get_torch_model(dataset)
-    if not pathlib.Path(path).exists():
+
+    # We load the model structure, too
+
+    path = pathlib.Path(path)
+    if not path.exists():
         if download:
-            pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
-            _download_pretrained_model(dataset, path)
+            base_model = _get_torch_model(dataset)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            state_dict_path = path.with_name(path.name.split('.')[0] + '_dict' + ''.join(path.suffixes))
+            _download_pretrained_model(dataset, str(state_dict_path))
+            model_tools.load_state_dict(base_model, state_dict_path, False, False)
+            torch.save(base_model, str(path))
         else:
             raise RuntimeError(
                 'No pretrained model found: {}. Use --download-model to automatically download missing models.'.format(path))
 
-    model = model_tools.load_state_dict(model, path, False, False)
+    # model = model_tools.load_state_dict(model, path, False, False)
+    model = torch.load(str(path))
     return model
 
 
@@ -495,6 +507,7 @@ def pretrained_model_options(func):
 
         torch_model = _get_pretrained_torch_model(
             dataset, base_model, state_dict_path, download_model)
+
         torch_model = torch.nn.Sequential(
             _get_normalisation(dataset), torch_model)
 
@@ -532,6 +545,8 @@ def custom_model_options(func):
         if (custom_state_dict_path is None) == (custom_model_path is None):
             raise click.BadOptionUsage('--custom-state-dict-path',
                 'You must pass either \'--custom-state-dict-path [PATH]\' or \'--custom-model-path [PATH]\' (but not both).')
+
+        # TODO: Load structure
 
         if custom_model_path is None:
             custom_torch_model = _get_torch_model(dataset)
@@ -835,7 +850,7 @@ def detector_options(func):
             detector = detectors.DistanceDetector(distance_tool)
 
         elif detector_name in supported_standard_detectors:
-            logger.debug('The detector a standard detector.')
+            logger.debug('The detector is a standard detector.')
             detector_type = 'standard'
 
             enable_caching = False
@@ -946,7 +961,7 @@ def adversarial_dataset_options(func):
     return _parse_adversarial_dataset_options
 
 def substitute_options(func):
-    @click.argument('substitute_model_path', type=click.Path(exists=True, file_okay=False, dir_okay=True))
+    @click.argument('substitute_model_path', type=click.Path(exists=True, file_okay=True, dir_okay=False))
     @click.option('--substitute-normalisation', default=None,
                   help='The normalisation that will be applied by the substitute model. Supports both dataset names ({}) and '
                   'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(', '.join(datasets)))

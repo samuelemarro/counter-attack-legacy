@@ -4,6 +4,7 @@ import click
 import foolbox
 import numpy as np
 import sklearn
+import sys
 import torch
 
 import OffenseDefense
@@ -22,13 +23,25 @@ import OffenseDefense.utils as utils
 
 logger = logging.getLogger('OffenseDefense')
 
-# TODO: Logging does not output to console
 # TODO: Test preprocessing options
+# TODO: Save models, not weights
+# TODO: Allow for optional model weights?
 
+# IMPORTANT:
+# Shallow attacks the standard model, then it is evaluated on the defended model
+# Substitute and Black-Box attack the defended model
+# This means that Substitute using the original model as estimator is
+# not the same as shallow
 
 @click.group()
 def main(*args):
     logging.basicConfig()
+    logging.captureWarnings(True)
+
+    root = logging.getLogger()
+    handler = logging.StreamHandler(sys.stdout)
+    handler.formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
+    root.addHandler(handler)
 
 
 @main.command()
@@ -546,7 +559,7 @@ def shallow_preprocessor(options):
 @parsing.test_options('defense/preprocessor/substitute')
 @parsing.parallelization_options
 @parsing.preprocessor_options
-@parsing.attack_options(parsing.black_box_attacks)
+@parsing.attack_options(parsing.differentiable_attacks)
 @parsing.substitute_options
 def substitute_preprocessor(options):
     attack_p = options['attack_p']

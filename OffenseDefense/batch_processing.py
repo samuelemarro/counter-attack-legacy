@@ -15,8 +15,8 @@ class BatchPooler:
     """
 
     def __init__(self, batch_worker):
-        self.inputs = []
-        self.outputs = []
+        self.inputs = {}
+        self.outputs = {}
         self.registered_ids = []
         self.deregistered_ids = queue.Queue()
         self.batch_worker = batch_worker
@@ -25,18 +25,19 @@ class BatchPooler:
     def register(self):
         # Only register before execution
         assert not self.running
-        self.registered_ids.append(threading.get_ident())
-        self.inputs.append(queue.Queue())
-        self.outputs.append(queue.Queue())
+        new_id = threading.get_ident()
+        self.registered_ids.append(new_id)
+        self.inputs[new_id] = queue.Queue()
+        self.outputs[new_id] = queue.Queue()
 
     def deregister(self):
         # Schedule for cleanup
         self.deregistered_ids.put(threading.get_ident())
 
     def call(self, input):
-        index = self.registered_ids.index(threading.get_ident())
-        self.inputs[index].put(input)
-        return self.outputs[index].get()
+        thread_id = threading.get_ident()
+        self.inputs[thread_id].put(input)
+        return self.outputs[thread_id].get()
 
     def _get_deregistered_id(self):
         try:
@@ -52,30 +53,28 @@ class BatchPooler:
             inputs = []
             active_ids = []
 
-            for i in range(len(self.registered_ids)):
+            for registered_id in self.registered_ids:
                 try:
-                    input = self.inputs[i].get(timeout=1e-5)
+                     input = self.inputs[registered_id].get(timeout=1e-5)
                 except queue.Empty:
                     input = None
 
                 if input is not None:
                     inputs.append(input)
-                    active_ids.append(self.registered_ids[i])
+                    active_ids.append(registered_id)
 
             if active_ids:
                 outputs = self.batch_worker(inputs)
                 for active_id, output in zip(active_ids, outputs):
-                    index = self.registered_ids.index(active_id)
-                    self.outputs[index].put(output)
+                    self.outputs[active_id].put(output)
 
             # Cleanup
             deregistered_id = self._get_deregistered_id()
             while deregistered_id is not None:
-
                 index = self.registered_ids.index(deregistered_id)
                 del self.registered_ids[index]
-                del self.inputs[index]
-                del self.outputs[index]
+                del self.inputs[deregistered_id]
+                del self.outputs[deregistered_id]
 
                 deregistered_id = self._get_deregistered_id()
 
