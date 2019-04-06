@@ -8,10 +8,13 @@ from . import batch_processing, utils
 
 logger = logging.getLogger(__name__)
 
+class ModelWorker(batch_processing.BatchWorker):
+    def has_gradient(self):
+        return NotImplementedError()
 
-class TorchWorker(batch_processing.BatchWorker):
+class TorchWorker(ModelWorker):
     """
-    A BatchWorker that wraps a Torch model (with autograd support).
+    A ModelWorker that wraps a Torch model (with autograd support).
     """
 
     def __init__(self,
@@ -26,6 +29,9 @@ class TorchWorker(batch_processing.BatchWorker):
         """
 
         self.torch_model = torch_model
+
+    def has_gradient(self):
+        return True
 
     def __call__(self, inputs):
         images = [np.array(x[0]) for x in inputs]
@@ -56,7 +62,7 @@ class TorchWorker(batch_processing.BatchWorker):
         return zip(outputs, grads)
 
 
-class FoolboxWorker(batch_processing.BatchWorker):
+class FoolboxWorker(ModelWorker):
     """
     A BatchWorker that wraps a Foolbox model.
     """
@@ -74,10 +80,37 @@ class FoolboxWorker(batch_processing.BatchWorker):
 
         self.foolbox_model = foolbox_model
 
+    def has_gradient(self):
+        return True
+
     def __call__(self, inputs):
         images = np.array(inputs)
         outputs = self.foolbox_model.batch_predictions(images)
         return outputs
+
+class CompositeWorker(ModelWorker):
+    """
+    A BatchWorker that uses a Foolbox model for predictions and a Torch Model for gradients.
+    """
+
+    def __init__(self, predictions_foolbox_model, estimate_torch_model):
+        self.predictions_foolbox_worker = FoolboxWorker(predictions_foolbox_model)
+        self.estimate_torch_worker = TorchWorker(estimate_torch_model)
+
+    def has_gradient(self):
+        return True
+
+    def __call__(self, inputs):
+        #print(inputs[0][0].shape)
+        images = [np.array(x[0]) for x in inputs]
+        foolbox_predictions = self.predictions_foolbox_worker(images)
+        torch_predictions_and_grads = self.estimate_torch_worker(inputs)
+
+        torch_grads = [grad for _, grad in torch_predictions_and_grads]
+
+        assert len(foolbox_predictions) == len(torch_grads)
+        
+        return zip(foolbox_predictions, torch_grads)
 
 
 class QueueAttackWorker(batch_processing.ThreadWorker):
@@ -160,7 +193,7 @@ def run_batch_attack(foolbox_model, batch_worker, attack, images, labels, num_wo
     input_queue = queue.Queue()
     data = zip(images, labels)
 
-    gradient = isinstance(batch_worker, TorchWorker)
+    gradient = batch_worker.has_gradient()
 
     attack_workers = [QueueAttackWorker(
         attack, gradient, foolbox_model, input_queue) for _ in range(num_workers)]

@@ -976,7 +976,7 @@ def substitute_options(func):
         has_normalisation = model_tools.has_normalisation(substitute_torch_model)
 
         if not has_normalisation and substitute_normalisation is None:
-            logger.warning('You are not applying any mean/stdev normalisation to your data. '
+            logger.warning('You are not applying any mean/stdev normalisation to your substitute model. '
                            'You can specify it by passing --substitute-normalisation DATASET '
                            'or --substitute-normalisation "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
 

@@ -172,7 +172,7 @@ def shallow_rejector_test(standard_model: foolbox.models.Model,
     return samples_count, correct_count, successful_attack_count, np.array(distances)
 
 
-def shallow_model_test(standard_model: foolbox.models.Model,
+def transfer_test(standard_model: foolbox.models.Model,
                        loader,
                        attack,
                        p,
@@ -228,7 +228,7 @@ def shallow_model_test(standard_model: foolbox.models.Model,
     return samples_count, correct_count, successful_attack_count, np.array(distances)
 
 
-def standard_detector_test(foolbox_model: foolbox.models.Model,
+def roc_curve_test(foolbox_model: foolbox.models.Model,
                            genuine_loader: loaders.Loader,
                            adversarial_loader: loaders.Loader,
                            detector: detectors.Detector,

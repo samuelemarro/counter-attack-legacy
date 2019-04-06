@@ -26,12 +26,14 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Test preprocessing options
 # TODO: Save models, not weights
 # TODO: Allow for optional model weights?
+# TODO: Check that the pretrained model does not contain normalisation inside?
+# TODO: British vs American spelling
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
 # Substitute and Black-Box attack the defended model
-# This means that Substitute using the original model as estimator is
-# not the same as shallow
+# This means that you cannot write the sanity check "Shallow is the same as
+# a Substitute that uses the original"
 
 @click.group()
 def main(*args):
@@ -162,7 +164,7 @@ def accuracy(options, top_ks):
 @parsing.dataset_options('test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
-@parsing.test_options('detect')
+@parsing.test_options('detector-roc')
 @parsing.parallelization_options
 @parsing.distance_tool_options
 @parsing.counter_attack_options(False)
@@ -172,9 +174,9 @@ def accuracy(options, top_ks):
               help='The path to the .zip file where the scores will be saved with their corresponding images. If unspecified, no scores will be saved.')
 @click.option('--no-test-warning', is_flag=True,
               help='Disables the warning for running this test on the test set.')
-def detect(options, saved_dataset_path, no_test_warning):
+def detector_roc(options, saved_dataset_path, no_test_warning):
     """
-    Uses a detector to identify adversarial samples.
+    Uses a detector to identify adversarial samples and computes the ROC curve.
     """
 
     adversarial_loader = options['adversarial_loader']
@@ -189,11 +191,11 @@ def detect(options, saved_dataset_path, no_test_warning):
     save_scores = saved_dataset_path is not None
 
     if dataset_type == 'test' and not no_test_warning:
-        logger.warning('Remember to use \'-dataset-type train\' if you plan to use the results '
+        logger.warning('Remember to use \'--dataset-type train\' if you plan to use the results '
                        'to pick a threshold for other tests. You can disable this warning by passing '
                        '\'--no-test-warning\'.')
 
-    genuine_scores, adversarial_scores, genuine_samples, adversarial_samples = tests.standard_detector_test(
+    genuine_scores, adversarial_scores, genuine_samples, adversarial_samples = tests.roc_curve_test(
         foolbox_model, genuine_loader, adversarial_loader, detector, save_scores)
 
     false_positive_rates, true_positive_rates, thresholds = utils.roc_curve(
@@ -416,7 +418,7 @@ def shallow_model(options):
     attack = parsing.parse_attack(
         attack_name, attack_p, foolbox_model, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances = tests.shallow_model_test(
+    samples_count, correct_count, successful_attack_count, distances = tests.transfer_test(
         foolbox_model, loader, attack, attack_p, custom_foolbox_model, standard_batch_worker, attack_workers, name='Shallow Model Attack')
 
     accuracy = correct_count / samples_count
@@ -529,7 +531,7 @@ def shallow_preprocessor(options):
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
-    samples_count, correct_count, successful_attack_count, distances = tests.shallow_model_test(foolbox_model, loader, attack, attack_p,
+    samples_count, correct_count, successful_attack_count, distances = tests.transfer_test(foolbox_model, loader, attack, attack_p,
                                                                                                 defended_model, standard_batch_worker,
                                                                                                 attack_workers, name='Shallow Preprocessor Attack')
 
@@ -572,6 +574,7 @@ def substitute_preprocessor(options):
     results_path = options['results_path']
     preprocessor = options['preprocessor']
     substitute_foolbox_model = options['substitute_foolbox_model']
+    substitute_torch_model = options['substitute_torch_model']
 
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
@@ -579,13 +582,13 @@ def substitute_preprocessor(options):
     composite_model = foolbox.models.CompositeModel(defended_model, substitute_foolbox_model)
 
     if attack_parallelization:
-        defended_batch_worker = batch_attack.FoolboxWorker(composite_model)
+        defended_batch_worker = batch_attack.CompositeWorker(defended_model, substitute_torch_model)
     else:
         defended_batch_worker = None
 
     criterion = foolbox.criteria.Misclassification()
 
-    # The attack will be against the defended model with composite gradients
+    # The attack will be against the defended model with estimated gradients
     attack = parsing.parse_attack(
         attack_name, attack_p, composite_model, criterion)
 
