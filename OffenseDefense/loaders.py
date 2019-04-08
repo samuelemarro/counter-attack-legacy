@@ -85,7 +85,7 @@ class ListLoader(Loader):
         return (len(self.elements) + self.batch_size - 1) // self.batch_size
 
 
-class MaxBatchLoader:
+class MaxBatchLoader(Loader):
     def __init__(self, loader, max_batches):
         self.loader = loader
         self.max_batches = max_batches

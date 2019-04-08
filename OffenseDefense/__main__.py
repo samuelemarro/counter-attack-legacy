@@ -28,12 +28,15 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Allow for optional model weights?
 # TODO: Check that the pretrained model does not contain normalisation inside?
 # TODO: British vs American spelling
+# TODO: Check composite workers
+# TODO: load_partial_state_dict and get_torch_model() with optional n+1 classes
+# TODO: Finish train_approximator
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
 # Substitute and Black-Box attack the defended model
 # This means that you cannot write the sanity check "Shallow is the same as
-# a Substitute that uses the original"
+# a Substitute that uses the original as gradient estimator"
 
 @click.group()
 def main(*args):
@@ -54,11 +57,11 @@ def main(*args):
 @parsing.test_options('attack')
 @parsing.parallelization_options
 @parsing.attack_options(parsing.supported_attacks)
-@click.option('--saved-dataset-path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
+@click.option('--adversarial-dataset-path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
               help='The path to the .zip file where the adversarial samples will be saved. If unspecified, no adversarial samples will be saved.')
 @click.option('--no-test-warning', is_flag=True,
               help='Disables the warning for running this test on the test set.')
-def attack(options, saved_dataset_path, no_test_warning):
+def attack(options, adversarial_dataset_path, no_test_warning):
     """
     Runs an attack against the model.
 
@@ -91,7 +94,7 @@ def attack(options, saved_dataset_path, no_test_warning):
     attack = parsing.parse_attack(
         attack_name, attack_p, foolbox_model, criterion)
 
-    save_adversarials = saved_dataset_path is not None
+    save_adversarials = adversarial_dataset_path is not None
 
     if dataset_type == 'test' and save_adversarials and not no_test_warning:
         logger.warning('Remember to use \'--dataset-type train\' if you plan to use the generated adversarials '
@@ -126,14 +129,14 @@ def attack(options, saved_dataset_path, no_test_warning):
     if save_adversarials:
         dataset = list(
             zip(adversarials, adversarial_ground_truths)), success_rate
-        utils.save_zip(dataset, saved_dataset_path)
+        utils.save_zip(dataset, adversarial_dataset_path)
 
 
 @main.command()
 @parsing.global_options
 @parsing.standard_model_options
 @parsing.pretrained_model_options
-@parsing.dataset_options('test')
+@parsing.dataset_options('test', 'test')
 @parsing.test_options('accuracy')
 @click.option('--top-ks', nargs=2, type=click.Tuple([int, int]), default=(1, 5), show_default=True,
               help='The two top-k accuracies that will be computed.')
@@ -170,11 +173,11 @@ def accuracy(options, top_ks):
 @parsing.counter_attack_options(False)
 @parsing.detector_options
 @parsing.adversarial_dataset_options
-@click.option('--saved_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
+@click.option('--score_dataset_path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
               help='The path to the .zip file where the scores will be saved with their corresponding images. If unspecified, no scores will be saved.')
 @click.option('--no-test-warning', is_flag=True,
               help='Disables the warning for running this test on the test set.')
-def detector_roc(options, saved_dataset_path, no_test_warning):
+def detector_roc(options, score_dataset_path, no_test_warning):
     """
     Uses a detector to identify adversarial samples and computes the ROC curve.
     """
@@ -188,7 +191,7 @@ def detector_roc(options, saved_dataset_path, no_test_warning):
     genuine_loader = options['loader']
     results_path = options['results_path']
 
-    save_scores = saved_dataset_path is not None
+    save_scores = score_dataset_path is not None
 
     if dataset_type == 'test' and not no_test_warning:
         logger.warning('Remember to use \'--dataset-type train\' if you plan to use the results '
@@ -242,7 +245,7 @@ def detector_roc(options, saved_dataset_path, no_test_warning):
 
         dataset = (genuine_list, adversarial_list)
 
-        utils.save_zip(dataset, saved_dataset_path)
+        utils.save_zip(dataset, score_dataset_path)
 
 
 @main.group()
@@ -257,7 +260,7 @@ def rejector_defense():
 
 @rejector_defense.command(name='shallow')
 @parsing.global_options
-@parsing.dataset_options('test')
+@parsing.dataset_options('test', 'test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/rejector/shallow')
@@ -314,7 +317,7 @@ def shallow_rejector(options):
 
 @rejector_defense.command(name='black-box')
 @parsing.global_options
-@parsing.dataset_options('test')
+@parsing.dataset_options('test', 'test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/rejector/black-box')
@@ -388,7 +391,7 @@ def model_defense():
 
 @model_defense.command(name='shallow')
 @parsing.global_options
-@parsing.dataset_options('test')
+@parsing.dataset_options('test', 'test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/model/shallow')
@@ -442,7 +445,7 @@ def shallow_model(options):
 
 @model_defense.command(name='black-box')
 @parsing.global_options
-@parsing.dataset_options('test')
+@parsing.dataset_options('test', 'test')
 @parsing.test_options('defense/model/black-box')
 @parsing.parallelization_options
 @parsing.custom_model_options
@@ -498,7 +501,7 @@ def preprocessor_defense():
 
 @preprocessor_defense.command(name='shallow')
 @parsing.global_options
-@parsing.dataset_options('test')
+@parsing.dataset_options('test', 'test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/shallow')
@@ -555,7 +558,7 @@ def shallow_preprocessor(options):
 
 @preprocessor_defense.command(name='substitute')
 @parsing.global_options
-@parsing.dataset_options('test')
+@parsing.dataset_options('test', 'test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/substitute')
@@ -616,7 +619,7 @@ def substitute_preprocessor(options):
 
 @preprocessor_defense.command(name='black-box')
 @parsing.global_options
-@parsing.dataset_options('test')
+@parsing.dataset_options('test', 'test')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/black-box')
@@ -742,7 +745,7 @@ def parallelization(options, attack_workers):
 
 @main.command()
 @parsing.global_options
-@parsing.dataset_options('train')
+@parsing.dataset_options('train', 'train')
 @parsing.train_options
 @click.option('--trained-model-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
               help='The path to the file where the model will be saved. If unspecified, it defaults to \'./train_model/$dataset$ $start_time$.pth.tar\'')
@@ -751,7 +754,7 @@ def train_model(options, trained_model_path):
     dataset = options['dataset']
     epochs = options['epochs']
     loader = options['loader']
-    optimizer = options['optimizer']
+    optimiser_name = options['optimiser_name']
     start_time = options['start_time']
 
     if trained_model_path is None:
@@ -761,37 +764,74 @@ def train_model(options, trained_model_path):
     torch_model = parsing._get_torch_model(dataset)
     torch_model.train()
 
+    optimiser = parsing.build_optimiser(optimiser_name, torch_model.parameters(), options)
+
     loss = torch.nn.CrossEntropyLoss()
 
     training.train_torch(torch_model, loader, loss,
-                         optimizer, epochs, cuda, classification=True)
+                         optimiser, epochs, cuda, classification=True)
 
-    model_tools.save_state_dict(torch_model, trained_model_path)
+    torch.save(torch_model, trained_model_path)
 
+@main.group(name='approximation-dataset')
+def approximation_dataset(*args, **kwargs):
+    pass
+
+@approximation_dataset.command(name='preprocessor')
+@parsing.global_options
+@parsing.dataset_options('train', 'train')
+@parsing.standard_model_options
+@parsing.pretrained_model_options
+@parsing.preprocessor_options
+@parsing.adversarial_dataset_options
+@parsing.approximation_dataset_options('preprocessor')
+def preprocessor(options):
+    adversarial_loader = options['adversarial_loader']
+    foolbox_model = options['foolbox_model']
+    genuine_loader = options['loader']
+    approximation_dataset_path = options['approximation_dataset_path']
+    preprocessor = options['preprocessor']
+
+    defended_model = defenses.PreprocessorDefenseModel(
+        foolbox_model, preprocessor)
+
+
+    genuine_approximation_dataset = training.generate_approximation_dataset(defended_model, genuine_loader, 'Genuine approximation Dataset')
+    adversarial_approximation_dataset = training.generate_approximation_dataset(defended_model, adversarial_loader, 'Adversarial approximation Dataset')
+
+    approximation_dataset = genuine_approximation_dataset + adversarial_approximation_dataset
+
+    utils.save_zip(approximation_dataset, approximation_dataset_path)
+    
 
 @main.command()
 @parsing.global_options
 @parsing.train_options
-@click.argument('target_model_predictions_path', type=click.Path(file_okay=True, dir_okay=False))
-@click.option('--trained-approximator-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
-              help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./train_approximator/$dataset$ $start_time$.pth.tar\'')
+@parsing.standard_model_options
+@click.argument('approximation_dataset_path', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.option('--trained-approximator-path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
+              help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./trained_models/train_approximator/$dataset$ $start_time$.pth.tar\'')
 def train_approximator(options, target_model_path, trained_approximator_path):
+    base_model = options['base_model']
     cuda = options['cuda']
     dataset = options['dataset']
-    detector = options['detector']
     epochs = options['epochs']
     loader = options['loader']
-    optimizer = options['optimizer']
+    optimiser_name = options['optimiser']
     start_time = options['start_time']
-    torch_model = options['torch_model']
 
     if trained_approximator_path is None:
         trained_approximator_path = parsing.get_training_default_path(
             'train_approximator', dataset, start_time)
 
+    # Build the pretrained model and the final model (which might be n+1)
+    # Transfer some layers (which? how?)
+    # Train the remaining layers of the final model
+    # Save the model
+
 
     training.train_torch(torch_model, loader, torch.nn.CrossEntropyLoss(),
-                         optimizer, epochs, cuda, classification=True)
+                         optimiser, epochs, cuda, classification=True)
 
     torch.save(torch_model, trained_approximator_path)
 

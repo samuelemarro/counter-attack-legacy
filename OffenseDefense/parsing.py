@@ -51,8 +51,20 @@ def get_training_default_path(training_name, dataset, start_time):
 
 
 def get_custom_dataset_default_path(name, original_dataset, start_time):
-    return './data/{}/{} {:%Y-%m-%d %H-%M-%S}.pth.tar'.format(name, original_dataset, start_time)
+    return './data/{}/{} {:%Y-%m-%d %H-%M-%S}.zip'.format(name, original_dataset, start_time)
 
+def build_optimiser(optimiser_name, learnable_parameters, options):
+    if optimiser_name == 'adam':
+        optimiser = torch.optim.Adam(
+            learnable_parameters, lr=options['learning_rate'], betas=options['adam_betas'], weight_decay=options['weight_decay'], eps=options['adam_epsilon'], amsgrad=options['adam_amsgrad'])
+    elif optimiser_name == 'sgd':
+        optimiser = torch.optim.SGD(
+            learnable_parameters, lr=options['learning_rate'], momentum=options['sgd_momentum'],
+            dampening=options['sgd_dampening'], weight_decay=options['weight_decay'], nesterov=options['sgd_nesterov'])
+    else:
+        raise ValueError('Optimiser not supported.')
+
+    return optimiser
 
 def _cifar_loader(dataset, path, train, download, batch_size, shuffle, num_workers):
     if dataset == 'cifar10':
@@ -210,10 +222,18 @@ def _get_torch_model(dataset: str) -> torch.nn.Module:
         The pretrained Torch model for the given dataset.
     """
 
+    if dataset == 'cifar10':
+        num_classes = 10
+    elif dataset == 'cifar100':
+        num_classes = 100
+    elif dataset == 'imagenet':
+        num_classes = 1000
+    else:
+        raise ValueError('Dataset not supported')
+
     # Use the models that have shown the best top-1 accuracy
     if dataset in ['cifar10', 'cifar100']:
         # For CIFAR10(0), we use a DenseNet with depth 190 and growth rate 40
-        num_classes = 10 if dataset == 'cifar10' else 100
         model = cifar_models.densenet(
             depth=190, growthRate=40, num_classes=num_classes)
     elif dataset == 'imagenet':
@@ -600,12 +620,12 @@ def custom_model_options(func):
     return _parse_custom_model_options
 
 
-def dataset_options(recommended):
+def dataset_options(default_dataset, recommended=None):
     def _dataset_options(func):
         @click.option('--data-folder', default=None, type=click.Path(file_okay=False, dir_okay=True),
                       help='The path to the folder where the dataset is stored (or will be downloaded). '
                       'If unspecified, it defaults to \'./data/genuine/$dataset$\'.')
-        @click.option('--dataset-type', default=recommended, show_default=True, type=click.Choice(['train', 'test']),
+        @click.option('--dataset-type', default=default_dataset, show_default=True, type=click.Choice(['train', 'test']),
                       help='Sets the dataset (train or test) that will be used.')
         @click.option('--download-dataset', is_flag=True,
                       help='If the dataset files do not exist, download them.')
@@ -623,7 +643,7 @@ def dataset_options(recommended):
             if data_folder is None:
                 data_folder = './data/genuine/' + dataset
 
-            if dataset_type != recommended:
+            if recommended is not None and dataset_type != recommended:
                 logger.warning('You are using the {} dataset. We recommend using the {} dataset for this command.'.format(
                     dataset_type, recommended))
 
@@ -649,7 +669,7 @@ def dataset_options(recommended):
 
 def train_options(func):
     @click.argument('epochs', type=click.IntRange(1, None))
-    @click.option('--optimizer', type=click.Choice(['adam', 'sgd']), default='adam', show_default=True)
+    @click.option('--optimiser', type=click.Choice(['adam', 'sgd']), default='adam', show_default=True)
     @click.option('--learning_rate', type=float, default=1e-3, show_default=True)
     @click.option('--weight-decay', type=float, default=0, show_default=True)
     @click.option('--adam-betas', nargs=2, type=click.Tuple([float, float]), default=(0.9, 0.999), show_default=True)
@@ -659,25 +679,14 @@ def train_options(func):
     @click.option('--sgd-dampening', type=float, default=0, show_default=True)
     @click.option('--sgd-nesterov', is_flag=True)
     @functools.wraps(func)
-    def _parse_train_options(options, epochs, optimizer, learning_rate, weight_decay, adam_betas, adam_epsilon, adam_amsgrad, sgd_momentum, sgd_dampening, sgd_nesterov, *args, **kwargs):
-        torch_model = options['torch_model']
-        if optimizer == 'adam':
-            optimizer = torch.optim.Adam(
-                torch_model.parameters(), lr=learning_rate, betas=adam_betas, weight_decay=weight_decay, eps=adam_epsilon, amsgrad=adam_amsgrad)
-        elif optimizer == 'sgd':
-            optimizer = torch.optim.SGD(
-                torch_model.parameters(), lr=learning_rate, momentum=sgd_momentum,
-                dampening=sgd_dampening, weight_decay=weight_decay, nesterov=sgd_nesterov)
-        else:
-            raise ValueError('Optimizer not supported.')
-
+    def _parse_train_options(options, epochs, optimiser, learning_rate, weight_decay, adam_betas, adam_epsilon, adam_amsgrad, sgd_momentum, sgd_dampening, sgd_nesterov, *args, **kwargs):
         train_options = dict(options)
 
         train_options['adam_betas'] = adam_betas
         train_options['adam_epsilon'] = adam_epsilon
         train_options['epochs'] = epochs
         train_options['learning_rate'] = learning_rate
-        train_options['optimizer'] = optimizer
+        train_options['optimiser_name'] = optimiser
         train_options['sgd_dampening'] = sgd_dampening
         train_options['sgd_momentum'] = sgd_momentum
         train_options['sgd_nesterov'] = sgd_nesterov
@@ -945,7 +954,7 @@ def adversarial_dataset_options(func):
 
         if max_adversarial_batches is not None:
             if (not options['shuffle']) and (not options['no_shuffle_warning']):
-                logger.warning('You are limiting the number of adversarial batches, but you aren\'t applying any shuffling. '
+                logger.warning('You are limiting the number of adversarial batches, but you are not applying any shuffling. '
                                'This means that the last parts of your adversarial dataset will be never used. You can disable this '
                                'warning by passing \'--no-shuffle-warning\'.')
 
@@ -1016,3 +1025,22 @@ def substitute_options(func):
     
     return _parse_substitute_options
 
+def approximation_dataset_options(defense_name):
+    def _approximation_dataset_options(func):
+        @click.option('--approximation-dataset-path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None)
+        @functools.wraps(func)
+        def _parse_approximation_dataset_options(options, approximation_dataset_path, *args, **kwargs):
+            dataset = options['dataset']
+            start_time = options['start_time']
+
+            if approximation_dataset_path is None:
+                approximation_dataset_path = get_custom_dataset_default_path('approximation/' + defense_name, dataset, start_time)
+
+            approximation_dataset_options = dict(options)
+
+            approximation_dataset_options['approximation_dataset_path'] = approximation_dataset_path
+
+            return func(approximation_dataset_options, *args, **kwargs)
+        return _parse_approximation_dataset_options
+    return _approximation_dataset_options
+        

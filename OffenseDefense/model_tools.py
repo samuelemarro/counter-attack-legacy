@@ -45,6 +45,14 @@ def save_state_dict(model, path):
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
     torch.save(model.state_dict(), path)
 
+def load_partial_state_dict(model, path):
+    pass
+    # TODO:
+    # Find all the keys in the target
+    # Load the dict key by key
+    # If there's a key or shape mismatch, skip
+    # Return all parameters that were not updated
+
 def has_normalisation(module):
     assert isinstance(module, torch.nn.Module)
 
