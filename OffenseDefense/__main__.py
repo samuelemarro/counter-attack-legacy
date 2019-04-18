@@ -31,6 +31,8 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Check composite workers
 # TODO: load_partial_state_dict and get_torch_model() with optional n+1 classes
 # TODO: Finish train_approximator
+# TODO: Download the cifar100 weights for densenet-bc-100-12 (when available)
+# TODO: Upload both of them and update the links in config.ini
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
@@ -157,7 +159,7 @@ def accuracy(options, top_ks):
     accuracies = tests.accuracy_test(
         foolbox_model, loader, top_ks)
 
-    info = [['Top-{} Accuracy:'.format(top_k), accuracy]
+    info = [['Top-{} Accuracy:'.format(top_k), '{:2.2f}%'.format(accuracy * 100.0)]
             for top_k, accuracy in zip(top_ks, accuracies)]
     utils.save_results(results_path, command=command, info=info)
 

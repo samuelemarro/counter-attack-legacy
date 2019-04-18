@@ -17,10 +17,11 @@ import torchvision
 from . import attacks, batch_attack, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, rejectors, utils
 
 default_architecture_names = {
-    'cifar10': 'densenet (depth=190, growth_rate=40)',
-    'cifar100': 'densenet (depth=190, growth_rate=40)',
+    'cifar10': 'densenet (depth=100, growth_rate=12)',
+    'cifar100': 'densenet (depth=100, growth_rate=12)',
     'imagenet': 'densenet (depth=161, growth_rate=48)'
 }
+
 datasets = ['cifar10', 'cifar100', 'imagenet']
 differentiable_attacks = ['deepfool', 'fgsm']
 black_box_attacks = ['boundary']
@@ -34,7 +35,7 @@ supported_standard_detectors = []
 
 supported_detectors = supported_distance_tools + supported_standard_detectors
 
-supported_preprocessors = ['feature_squeezing', 'spatial_smoothing']
+supported_preprocessors = ['feature-squeezing', 'spatial-smoothing']
 
 supported_ps = ['2', 'inf']
 
@@ -280,7 +281,7 @@ def _get_pretrained_torch_model(dataset: str, base_model: torch.nn.Module, path:
         if download:
             base_model = _get_torch_model(dataset)
             path.parent.mkdir(parents=True, exist_ok=True)
-            state_dict_path = path.with_name(path.name.split('.')[0] + '_dict' + ''.join(path.suffixes))
+            state_dict_path = path.with_name(path.name.split('.')[0] + '_weights' + ''.join(path.suffixes))
             _download_pretrained_model(dataset, str(state_dict_path))
             model_tools.load_state_dict(base_model, state_dict_path, False, False)
             torch.save(base_model, str(path))
@@ -398,9 +399,9 @@ def parse_standard_detector(detector, options, failure_value):
 
 
 def parse_preprocessor(preprocessor, options):
-    if preprocessor == 'spatial_smoothing':
+    if preprocessor == 'spatial-smoothing':
         return art.defences.SpatialSmoothing(options['spatial_smoothing_window'])
-    elif preprocessor == 'feature_squeezing':
+    elif preprocessor == 'feature-squeezing':
         return art.defences.FeatureSqueezing(options['feature_squeezing_bit_depth'])
     else:
         raise ValueError('Preprocessor not supported.')
@@ -569,9 +570,9 @@ def custom_model_options(func):
         # TODO: Load structure
 
         if custom_model_path is None:
-            custom_torch_model = _get_torch_model(dataset)
             logger.info('No custom architecture path passed. Using default architecture {}'.format(
                 default_architecture_names[dataset]))
+            custom_torch_model = _get_torch_model(dataset)
             model_tools.load_state_dict(
                 custom_torch_model, custom_state_dict_path, False, False)
         else:
