@@ -162,8 +162,6 @@ class QueueAttackWorker(batch_processing.ThreadWorker):
                                                   self.attack._default_distance,
                                                   self.attack._default_threshold)
                 adversarial_image = self.attack(adversarial)
-                print('Done')
-
                 return_queue.put((i, adversarial_image))
             except queue.Empty:
                 # No more inputs, we can stop

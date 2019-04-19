@@ -138,7 +138,7 @@ class CacheRejector(Rejector):
         return responses
 
 
-class CompositeRejectorModel(foolbox.models.Model):
+class RejectorModel(foolbox.models.Model):
     def __init__(self, classifier, rejector):
         super().__init__(classifier.bounds(),
                          classifier.channel_axis(), classifier._preprocessing)

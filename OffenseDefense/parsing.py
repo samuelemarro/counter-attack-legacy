@@ -515,11 +515,11 @@ def pretrained_model_options(func):
         torch_model
     """
 
-    @click.option('--state-dict-path', type=click.Path(file_okay=True, dir_okay=False), default=None)
+    @click.option('--weights-path', type=click.Path(file_okay=True, dir_okay=False), default=None)
     @click.option('--download-model', is_flag=True,
                   help='If the model file does not exist, download the pretrained model for the corresponding dataset.')
     @functools.wraps(func)
-    def _parse_pretrained_model_options(options, state_dict_path, download_model, *args, **kwargs):
+    def _parse_pretrained_model_options(options, weights_path, download_model, *args, **kwargs):
         base_model = options['base_model']
         cuda = options['cuda']
         dataset = options['dataset']
@@ -527,11 +527,13 @@ def pretrained_model_options(func):
         max_model_batch_size = options['max_model_batch_size']
         num_classes = options['num_classes']
 
-        if state_dict_path is None:
-            state_dict_path = './pretrained_models/' + dataset + '.pth.tar'
+        if weights_path is None:
+            weights_path = './pretrained_models/' + dataset + '.pth.tar'
+
+        logger.debug('Loading weights from {}'.format(weights_path))
 
         torch_model = _get_pretrained_torch_model(
-            dataset, base_model, state_dict_path, download_model)
+            dataset, base_model, weights_path, download_model)
 
         torch_model = torch.nn.Sequential(
             _get_normalisation(dataset), torch_model)
@@ -557,30 +559,30 @@ def pretrained_model_options(func):
 
 
 def custom_model_options(func):
-    @click.option('--custom-state-dict-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
+    @click.option('--custom-weights-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
     @click.option('--custom-model-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None)
     @click.option('--custom-model-normalisation', default=None,
                   help='The normalisation that will be applied by the custom model. Supports both dataset names ({}) and '
                   'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(', '.join(datasets)))
     @functools.wraps(func)
-    def _parse_custom_model_options(options, custom_state_dict_path, custom_model_path, custom_model_normalisation, *args, **kwargs):
+    def _parse_custom_model_options(options, custom_weights_path, custom_model_path, custom_model_normalisation, *args, **kwargs):
         cuda = options['cuda']
         dataset = options['dataset']
         device = options['device']
         max_model_batch_size = options['max_model_batch_size']
         num_classes = options['num_classes']
 
-        # NXOR between custom_state_dict_path and custom_model_path
-        if (custom_state_dict_path is None) == (custom_model_path is None):
-            raise click.BadOptionUsage('--custom-state-dict-path',
-                'You must pass either \'--custom-state-dict-path [PATH]\' or \'--custom-model-path [PATH]\' (but not both).')
+        # NXOR between custom_weights_path and custom_model_path
+        if (custom_weights_path is None) == (custom_model_path is None):
+            raise click.BadOptionUsage('--custom-weights-path',
+                'You must pass either \'--custom-weights-path [PATH]\' or \'--custom-model-path [PATH]\' (but not both).')
 
         if custom_model_path is None:
             logger.info('No custom architecture path passed. Using default architecture {}'.format(
                 default_architecture_names[dataset]))
             custom_torch_model = _get_torch_model(dataset)
             model_tools.load_state_dict(
-                custom_torch_model, custom_state_dict_path, False, False)
+                custom_torch_model, custom_weights_path, False, False)
         else:
             custom_torch_model = torch.load(custom_model_path)
 

@@ -46,6 +46,7 @@ def main(*args):
     logging.basicConfig()
     logging.captureWarnings(True)
 
+    # Print the messages to console
     root = logging.getLogger()
     handler = logging.StreamHandler(sys.stdout)
     handler.formatter = logging.Formatter('%(levelname)s:%(name)s:%(message)s')
@@ -342,7 +343,7 @@ def black_box_rejector(options):
     # This means that if the top label is the last one, it was classified as adversarial.
     # On a genuine dataset, this should never happen (if the rejector is perfect).
 
-    defended_model = rejectors.CompositeRejectorModel(
+    defended_model = rejectors.RejectorModel(
         foolbox_model, rejector)
 
     # detectors.Undetected() adds the condition that the top label must not be the last
@@ -780,24 +781,71 @@ def approximation_dataset(*args, **kwargs):
 @parsing.preprocessor_options
 @parsing.adversarial_dataset_options
 @parsing.approximation_dataset_options('preprocessor')
-def preprocessor(options):
+def approximation_dataset_preprocessor(options):
     adversarial_loader = options['adversarial_loader']
+    approximation_dataset_path = options['approximation_dataset_path']
     foolbox_model = options['foolbox_model']
     genuine_loader = options['loader']
-    approximation_dataset_path = options['approximation_dataset_path']
     preprocessor = options['preprocessor']
 
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
 
-    genuine_approximation_dataset = training.generate_approximation_dataset(defended_model, genuine_loader, 'Genuine approximation Dataset')
-    adversarial_approximation_dataset = training.generate_approximation_dataset(defended_model, adversarial_loader, 'Adversarial approximation Dataset')
+    genuine_approximation_dataset = training.generate_approximation_dataset(defended_model, genuine_loader, 'Genuine Approximation Dataset')
+    adversarial_approximation_dataset = training.generate_approximation_dataset(defended_model, adversarial_loader, 'Adversarial Approximation Dataset')
 
     approximation_dataset = genuine_approximation_dataset + adversarial_approximation_dataset
 
     utils.save_zip(approximation_dataset, approximation_dataset_path)
-    
+
+@approximation_dataset.command(name='model')
+@parsing.global_options
+@parsing.dataset_options('train', 'train')
+@parsing.standard_model_options
+@parsing.custom_model_options
+@parsing.adversarial_dataset_options
+@parsing.approximation_dataset_options('model')
+def approximation_dataset_model(options):
+    adversarial_loader = options['adversarial_loader']
+    approximation_dataset_path = options['approximation_dataset_path']
+    custom_foolbox_model = options['custom_foolbox_model']
+    genuine_loader = options['loader']
+
+    genuine_approximation_dataset = training.generate_approximation_dataset(custom_foolbox_model, genuine_loader, 'Genuine Approximation Dataset')
+    adversarial_approximation_dataset = training.generate_approximation_dataset(custom_foolbox_model, adversarial_loader, 'Adversarial Approximation Dataset')
+
+    approximation_dataset = genuine_approximation_dataset + adversarial_approximation_dataset
+
+    utils.save_zip(approximation_dataset, approximation_dataset_path)
+
+@approximation_dataset.command(name='rejector')
+@parsing.global_options
+@parsing.dataset_options('train', 'train')
+@parsing.standard_model_options
+@parsing.pretrained_model_options
+@parsing.attack_options(parsing.supported_attacks)
+@parsing.distance_tool_options
+@parsing.counter_attack_options(False)
+@parsing.detector_options
+@parsing.rejector_options
+@parsing.adversarial_dataset_options
+@parsing.approximation_dataset_options('rejector')
+def approximation_dataset_rejector(options):
+    adversarial_loader = options['adversarial_loader']
+    approximation_dataset_path = options['approximation_dataset_path']
+    foolbox_model = options['foolbox_model']
+    genuine_loader = options['loader']
+    rejector = options['rejector']
+
+    defended_model = rejectors.RejectorModel(foolbox_model, rejector)
+
+    genuine_approximation_dataset = training.generate_approximation_dataset(defended_model, genuine_loader, 'Genuine Approximation Dataset')
+    adversarial_approximation_dataset = training.generate_approximation_dataset(defended_model, adversarial_loader, 'Adversarial Approximation Dataset')
+
+    approximation_dataset = genuine_approximation_dataset + adversarial_approximation_dataset
+
+    utils.save_zip(approximation_dataset, approximation_dataset_path)
 
 @main.command()
 @parsing.global_options
