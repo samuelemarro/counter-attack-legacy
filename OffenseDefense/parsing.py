@@ -382,7 +382,7 @@ def parse_distance_tool(tool_name, options, failure_value):
             # Note: We use the Torch worker directly (without any defenses) since the counter-attack is the defense
             # We also use it because some attacks require the gradient.
 
-            batch_worker = batch_attack.TorchWorker(torch_model)
+            batch_worker = batch_attack.TorchModelWorker(torch_model)
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
                                                                defense_p, failure_value, batch_worker, counter_attack_workers)
         else:
@@ -432,6 +432,8 @@ def global_options(func):
     @click.argument('dataset', type=click.Choice(datasets))
     @click.option('--batch-size', default=5, show_default=True, type=click.IntRange(1, None),
                   help='The size of each batch.')
+    @click.option('--max-model-batch-size', type=click.IntRange(0, None), default=0,
+                  help='The maximum number of images passed in the same batch. 0 disables batch limiting (default).')
     @click.option('--max-batches', type=click.IntRange(1, None), default=None,
                   help='The maximum number of batches. If unspecified, no batch limiting is applied.')
     @click.option('--shuffle', type=bool, default=True, show_default=True,
@@ -441,10 +443,10 @@ def global_options(func):
     @click.option('--no-cuda', is_flag=True)
     @click.option('--no-shuffle-warning', is_flag=True,
                   help='Disables the warning for limiting batches without shuffling.')
-    @click.option('--verbosity', default='info', show_default=True, type=click.Choice(['debug', 'info', 'warning', 'error', 'critical']),
-                  help='Sets the level of verbosity.')
+    @click.option('--log-level', default='info', show_default=True, type=click.Choice(['debug', 'info', 'warning', 'error', 'critical']),
+                  help='Sets the logging level.')
     @functools.wraps(func)
-    def _parse_global_options(dataset, batch_size, max_batches, shuffle, config_path, no_cuda, no_shuffle_warning, verbosity, *args, **kwargs):
+    def _parse_global_options(dataset, batch_size, max_model_batch_size, max_batches, shuffle, config_path, no_cuda, no_shuffle_warning, log_level, *args, **kwargs):
         start_time = datetime.datetime.now()
 
         command = ' '.join(sys.argv[1:])
@@ -461,7 +463,7 @@ def global_options(func):
 
         device = torch.cuda.current_device() if cuda else 'cpu'
 
-        logging.getLogger('OffenseDefense').setLevel(verbosity.upper())
+        logging.getLogger('OffenseDefense').setLevel(log_level.upper())
 
         global_options = {
             'batch_size': batch_size,
@@ -471,6 +473,7 @@ def global_options(func):
             'device': device,
             'dataset': dataset,
             'max_batches': max_batches,
+            'max_model_batch_size' : max_model_batch_size,
             'no_shuffle_warning': no_shuffle_warning,
             'num_classes': num_classes,
             'shuffle': shuffle,
@@ -521,6 +524,7 @@ def pretrained_model_options(func):
         cuda = options['cuda']
         dataset = options['dataset']
         device = options['device']
+        max_model_batch_size = options['max_model_batch_size']
         num_classes = options['num_classes']
 
         if state_dict_path is None:
@@ -539,6 +543,9 @@ def pretrained_model_options(func):
 
         foolbox_model = foolbox.models.PyTorchModel(
             torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
+
+        if max_model_batch_size > 0:
+            foolbox_model = model_tools.MaxBatchModel(foolbox_model, max_model_batch_size)
 
         pretrained_model_options = dict(options)
 
@@ -560,14 +567,13 @@ def custom_model_options(func):
         cuda = options['cuda']
         dataset = options['dataset']
         device = options['device']
+        max_model_batch_size = options['max_model_batch_size']
         num_classes = options['num_classes']
 
-        # NXOR between custom_weights and custom_architecture
+        # NXOR between custom_state_dict_path and custom_model_path
         if (custom_state_dict_path is None) == (custom_model_path is None):
             raise click.BadOptionUsage('--custom-state-dict-path',
                 'You must pass either \'--custom-state-dict-path [PATH]\' or \'--custom-model-path [PATH]\' (but not both).')
-
-        # TODO: Load structure
 
         if custom_model_path is None:
             logger.info('No custom architecture path passed. Using default architecture {}'.format(
@@ -612,6 +618,9 @@ def custom_model_options(func):
 
         custom_foolbox_model = foolbox.models.PyTorchModel(
             custom_torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
+
+        if max_model_batch_size > 0:
+            custom_foolbox_model = model_tools.MaxBatchModel(custom_foolbox_model, max_model_batch_size)
 
         custom_model_options = dict(options)
         custom_model_options['custom_foolbox_model'] = custom_foolbox_model
@@ -683,6 +692,7 @@ def train_options(func):
     def _parse_train_options(options, epochs, optimiser, learning_rate, weight_decay, adam_betas, adam_epsilon, adam_amsgrad, sgd_momentum, sgd_dampening, sgd_nesterov, *args, **kwargs):
         train_options = dict(options)
 
+        train_options['adam_amsgrad'] = adam_amsgrad
         train_options['adam_betas'] = adam_betas
         train_options['adam_epsilon'] = adam_epsilon
         train_options['epochs'] = epochs
@@ -718,46 +728,42 @@ def test_options(test_name):
         return _parse_test_options
     return _test_options
 
+def attack_options(attacks, mandatory_parallelization=False):
+    if mandatory_parallelization:
+        _min_attack_workers = 1
+        _attack_workers_help = 'The number of parallel workers that will be used to speed up the attack.'
+    else:
+        _min_attack_workers = 0
+        _attack_workers_help = 'The number of parallel workers that will be used to speed up the attack. 0 disables parallelization.'
 
-def parallelization_options(func):
-    @click.option('--no-parallelization', is_flag=True,
-                  help='Disables attack parallelization. This might increase the execution time.')
-    @click.option('--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
-                  help='The number of parallel workers that will be used to speed up the attack (if possible).')
-    @functools.wraps(func)
-    def parse_parallelization_options(options, no_parallelization, attack_workers, *args, **kwargs):
-        enable_parallelization = not no_parallelization
-
-        if not enable_parallelization:
-            attack_workers = 0
-
-        parallelization_options = dict(options)
-        parallelization_options['attack_workers'] = attack_workers
-        parallelization_options['enable_parallelization'] = enable_parallelization
-
-        return func(parallelization_options, *args, **kwargs)
-    return parse_parallelization_options
-
-
-def attack_options(attacks):
     def _attack_options(func):
         @click.argument('attack', type=click.Choice(attacks))
         @click.argument('attack_p', type=click.Choice(supported_ps))
+        @click.option('--attack-workers', default=0, show_default=True, type=click.IntRange(_min_attack_workers, None),
+                  help=_attack_workers_help)
         @functools.wraps(func)
-        def _parse_attack_options(options, attack, attack_p, *args, **kwargs):
-            enable_parallelization = options['enable_parallelization']
-
+        def _parse_attack_options(options, attack, attack_p, attack_workers, *args, **kwargs):
             attack_p = float(attack_p)
 
-            attack_parallelization = enable_parallelization and attack in parallelizable_attacks
+            if attack in parallelizable_attacks:
+                logger.debug('Attack supports parallelization.')
+            else:
+                logger.debug('Attack does not support parallelization.')
+
+                if attack_workers > 0:
+                    raise click.BadOptionUsage('--attack-workers', 'The chosen attack \'{}\' does not support parallelization.'.format(attack))
+
+            attack_parallelization = attack_workers > 0
+
+            logger.info('Attack parallelization: {} ({} workers).'.format(attack_parallelization, attack_workers))
 
             attack_options = dict(options)
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
             attack_options['attack_name'] = attack
-            attack_options['enable_parallelization'] = enable_parallelization
             attack_options['attack_p'] = attack_p
             attack_options['attack_parallelization'] = attack_parallelization
+            attack_options['attack_workers'] = attack_workers
 
             return func(attack_options, *args, **kwargs)
         return _parse_attack_options
@@ -780,23 +786,36 @@ def distance_tool_options(func):
 
 def counter_attack_options(required):
     def _counter_attack_options(func):
-        @click.option('--counter-attack-workers', default=None, type=click.IntRange(1, None),
-                      help='The number of attack workers of the counter attack. If unspecified, it defaults to the number of attack workers.')
+        @click.option('--counter-attack-workers', default=None, type=click.IntRange(0, None),
+                      help='The number of attack workers of the counter attack. If unspecified, it defaults to the number of attack workers. 0 disables parallelization.')
         @functools.wraps(func)
         def _parse_counter_attack_options(options, counter_attack, counter_attack_workers, *args, **kwargs):
             attack_workers = options['attack_workers']
-            foolbox_model = options['foolbox_model']
-            enable_parallelization = options['enable_parallelization']
             defense_p = options['defense_p']
+            foolbox_model = options['foolbox_model']
+            max_model_batch_size = options['max_model_batch_size']
 
-            if counter_attack_workers is None:
-                counter_attack_workers = attack_workers
+            if counter_attack in parallelizable_attacks:
+                logger.debug('Counter attack supports parallelization.')
+                if counter_attack_workers is None:
+                    counter_attack_workers = attack_workers
+                    logger.debug('--counter-attack-workers not set, defaulting to --attack-workers ({}).'.format(attack_workers))
+            else:
+                logger.debug('Counter attack does not support parallelization.')
 
-            counter_attack_parallelization = (
-                counter_attack in parallelizable_attacks) and enable_parallelization
+                if counter_attack_workers is not None and counter_attack_workers > 0:
+                    raise click.BadOptionUsage('--counter-attack-workers', 'The chosen counter-attack \'{}\' does not support parallelization.'.format(counter_attack))
 
-            if not counter_attack_parallelization:
                 counter_attack_workers = 0
+
+            counter_attack_parallelization = counter_attack_workers > 0
+            logger.info('Counter attack parallelization: {} ({} workers).'.format(counter_attack_parallelization, counter_attack_workers))
+
+            if max_model_batch_size > 0 and counter_attack_workers > max_model_batch_size:
+                raise click.BadOptionUsage('--counter-attack-workers',
+                    'The number of counter attack workers must be at most the maximum model batch size. '
+                    'Either increase the maximum model batch size, decrease the number of '
+                    'counter attack workers, or disable model batch limiting.')
 
             counter_attack = parse_attack(
                 counter_attack, defense_p, foolbox_model, foolbox.criteria.Misclassification())
@@ -979,6 +998,7 @@ def substitute_options(func):
     def _parse_substitute_options(options, substitute_model_path, substitute_normalisation, *args, **kwargs):
         cuda = options['cuda']
         device = options['device']
+        max_model_batch_size = options['max_model_batch_size']
         num_classes = options['num_classes']
 
         substitute_torch_model = torch.load(substitute_model_path)
@@ -1017,6 +1037,9 @@ def substitute_options(func):
 
         substitute_foolbox_model = foolbox.models.PyTorchModel(
             substitute_torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
+
+        if max_model_batch_size > 0:
+            substitute_foolbox_model = model_tools.MaxBatchModel(substitute_foolbox_model, max_model_batch_size)
 
         substitute_options = dict(options)
         substitute_options['substitute_foolbox_model'] = substitute_foolbox_model

@@ -111,7 +111,6 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
     def _safe_batch_predictions(self, foolbox_adversarial, images):
         batch_predictions = []
         batch_is_adversarial = []
-        n = self.max_batch_size
         split_images = []
         minibatch_count = (
             len(images) + self.max_batch_size - 1) // self.max_batch_size

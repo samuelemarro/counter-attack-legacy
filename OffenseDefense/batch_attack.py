@@ -12,14 +12,14 @@ class ModelWorker(batch_processing.BatchWorker):
     def has_gradient(self):
         return NotImplementedError()
 
-class TorchWorker(ModelWorker):
+class TorchModelWorker(ModelWorker):
     """
     A ModelWorker that wraps a Torch model (with autograd support).
     """
 
     def __init__(self,
                  torch_model: torch.nn.Module):
-        """Initializes the TorchWorker.
+        """Initializes the TorchModelWorker.
 
         Parameters
         ----------
@@ -62,14 +62,14 @@ class TorchWorker(ModelWorker):
         return zip(outputs, grads)
 
 
-class FoolboxWorker(ModelWorker):
+class FoolboxModelWorker(ModelWorker):
     """
     A BatchWorker that wraps a Foolbox model.
     """
 
     def __init__(self,
                  foolbox_model: foolbox.models.Model):
-        """Initializes the TorchWorker.
+        """Initializes the TorchModelWorker.
 
         Parameters
         ----------
@@ -88,14 +88,14 @@ class FoolboxWorker(ModelWorker):
         outputs = self.foolbox_model.batch_predictions(images)
         return outputs
 
-class CompositeWorker(ModelWorker):
+class CompositeModelWorker(ModelWorker):
     """
     A BatchWorker that uses a Foolbox model for predictions and a Torch Model for gradients.
     """
 
     def __init__(self, predictions_foolbox_model, estimate_torch_model):
-        self.predictions_foolbox_worker = FoolboxWorker(predictions_foolbox_model)
-        self.estimate_torch_worker = TorchWorker(estimate_torch_model)
+        self.predictions_foolbox_worker = FoolboxModelWorker(predictions_foolbox_model)
+        self.estimate_torch_worker = TorchModelWorker(estimate_torch_model)
 
     def has_gradient(self):
         return True
@@ -162,6 +162,7 @@ class QueueAttackWorker(batch_processing.ThreadWorker):
                                                   self.attack._default_distance,
                                                   self.attack._default_threshold)
                 adversarial_image = self.attack(adversarial)
+                print('Done')
 
                 return_queue.put((i, adversarial_image))
             except queue.Empty:
@@ -218,7 +219,7 @@ def run_individual_attack(attack, images, labels):
     return adversarials
 
 
-def get_correct_samples(foolbox_model: foolbox.models.PyTorchModel,
+def get_correct_samples(foolbox_model: foolbox.models.Model,
                         images: np.ndarray,
                         labels: np.ndarray):
     _filter = utils.Filter()
@@ -236,7 +237,7 @@ def get_correct_samples(foolbox_model: foolbox.models.PyTorchModel,
     return _filter['images'], _filter['image_labels']
 
 
-def get_approved_samples(foolbox_model: foolbox.models.PyTorchModel,
+def get_approved_samples(foolbox_model: foolbox.models.Model,
                          images: np.ndarray,
                          labels: np.ndarray,
                          rejector):
@@ -259,7 +260,7 @@ they're close to the boundary and can switch class depending on the approximatio
 """
 
 
-def get_adversarials(foolbox_model: foolbox.models.PyTorchModel,
+def get_adversarials(foolbox_model: foolbox.models.Model,
                      images: np.ndarray,
                      labels: np.ndarray,
                      adversarial_attack: foolbox.attacks.Attack,

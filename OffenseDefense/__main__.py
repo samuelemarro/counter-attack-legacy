@@ -33,6 +33,7 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Finish train_approximator
 # TODO: Download the cifar100 weights for densenet-bc-100-12 (when available)
 # TODO: Upload both of them and update the links in config.ini
+# TODO: counter_attack_workers doesn't do anything!
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
@@ -57,7 +58,6 @@ def main(*args):
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('attack')
-@parsing.parallelization_options
 @parsing.attack_options(parsing.supported_attacks)
 @click.option('--adversarial-dataset-path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
               help='The path to the .zip file where the adversarial samples will be saved. If unspecified, no adversarial samples will be saved.')
@@ -89,7 +89,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
     criterion = foolbox.criteria.Misclassification()
 
     if attack_parallelization:
-        batch_worker = batch_attack.TorchWorker(torch_model)
+        batch_worker = batch_attack.TorchModelWorker(torch_model)
     else:
         batch_worker = None
 
@@ -170,7 +170,6 @@ def accuracy(options, top_ks):
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('detector-roc')
-@parsing.parallelization_options
 @parsing.distance_tool_options
 @parsing.counter_attack_options(False)
 @parsing.detector_options
@@ -266,7 +265,6 @@ def rejector_defense():
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/rejector/shallow')
-@parsing.parallelization_options
 @parsing.attack_options(parsing.supported_attacks)
 @parsing.distance_tool_options
 @parsing.counter_attack_options(False)
@@ -285,7 +283,7 @@ def shallow_rejector(options):
     torch_model = options['torch_model']
 
     if attack_parallelization:
-        batch_worker = batch_attack.TorchWorker(torch_model)
+        batch_worker = batch_attack.TorchModelWorker(torch_model)
     else:
         batch_worker = None
 
@@ -323,7 +321,6 @@ def shallow_rejector(options):
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/rejector/black-box')
-@parsing.parallelization_options
 @parsing.attack_options(parsing.black_box_attacks)
 @parsing.distance_tool_options
 @parsing.counter_attack_options(False)
@@ -356,7 +353,7 @@ def black_box_rejector(options):
         foolbox.criteria.Misclassification(), rejectors.Unrejected())
 
     if attack_parallelization:
-        defended_batch_worker = batch_attack.FoolboxWorker(defended_model)
+        defended_batch_worker = batch_attack.FoolboxModelWorker(defended_model)
     else:
         defended_batch_worker = None
 
@@ -397,7 +394,6 @@ def model_defense():
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/model/shallow')
-@parsing.parallelization_options
 @parsing.custom_model_options
 @parsing.attack_options(parsing.supported_attacks)
 def shallow_model(options):
@@ -413,7 +409,7 @@ def shallow_model(options):
     torch_model = options['torch_model']
 
     if attack_parallelization:
-        standard_batch_worker = batch_attack.TorchWorker(torch_model)
+        standard_batch_worker = batch_attack.TorchModelWorker(torch_model)
     else:
         standard_batch_worker = None
 
@@ -449,7 +445,6 @@ def shallow_model(options):
 @parsing.global_options
 @parsing.dataset_options('test', 'test')
 @parsing.test_options('defense/model/black-box')
-@parsing.parallelization_options
 @parsing.custom_model_options
 @parsing.attack_options(parsing.black_box_attacks)
 def black_box_model(options):
@@ -464,7 +459,7 @@ def black_box_model(options):
     custom_torch_model = options['custom_torch_model']
 
     if attack_parallelization:
-        custom_batch_worker = batch_attack.TorchWorker(custom_torch_model)
+        custom_batch_worker = batch_attack.TorchModelWorker(custom_torch_model)
     else:
         custom_batch_worker = None
 
@@ -507,7 +502,6 @@ def preprocessor_defense():
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/shallow')
-@parsing.parallelization_options
 @parsing.preprocessor_options
 @parsing.attack_options(parsing.supported_attacks)
 def shallow_preprocessor(options):
@@ -523,7 +517,7 @@ def shallow_preprocessor(options):
     torch_model = options['torch_model']
 
     if attack_parallelization:
-        standard_batch_worker = batch_attack.TorchWorker(torch_model)
+        standard_batch_worker = batch_attack.TorchModelWorker(torch_model)
     else:
         standard_batch_worker = None
 
@@ -564,7 +558,6 @@ def shallow_preprocessor(options):
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/substitute')
-@parsing.parallelization_options
 @parsing.preprocessor_options
 @parsing.attack_options(parsing.differentiable_attacks)
 @parsing.substitute_options
@@ -587,7 +580,7 @@ def substitute_preprocessor(options):
     composite_model = foolbox.models.CompositeModel(defended_model, substitute_foolbox_model)
 
     if attack_parallelization:
-        defended_batch_worker = batch_attack.CompositeWorker(defended_model, substitute_torch_model)
+        defended_batch_worker = batch_attack.CompositeModelWorker(defended_model, substitute_torch_model)
     else:
         defended_batch_worker = None
 
@@ -625,7 +618,6 @@ def substitute_preprocessor(options):
 @parsing.standard_model_options
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/black-box')
-@parsing.parallelization_options
 @parsing.preprocessor_options
 @parsing.attack_options(parsing.black_box_attacks)
 def black_box_preprocessor(options):
@@ -643,7 +635,7 @@ def black_box_preprocessor(options):
         foolbox_model, preprocessor)
 
     if attack_parallelization:
-        defended_batch_worker = batch_attack.FoolboxWorker(defended_model)
+        defended_batch_worker = batch_attack.FoolboxModelWorker(defended_model)
     else:
         defended_batch_worker = None
 
@@ -682,16 +674,14 @@ def black_box_preprocessor(options):
 @parsing.pretrained_model_options
 @parsing.dataset_options('test')
 @parsing.test_options('parallelization')
-@parsing.set_parameters({'enable_parallelization': True})
-@parsing.attack_options(parsing.parallelizable_attacks)
-@click.option('--attack-workers', default=5, show_default=True, type=click.IntRange(1, None),
-              help='The number of parallel workers that will be used to speed up the attack.')
-def parallelization(options, attack_workers):
+@parsing.attack_options(parsing.parallelizable_attacks, mandatory_parallelization=True)
+def parallelization(options):
     """
     Compares parallelized attacks with standard ones.
     """
 
     attack_name = options['attack_name']
+    attack_workers = options['attack_workers']
     command = options['command']
     foolbox_model = options['foolbox_model']
     attack_p = options['attack_p']
@@ -699,7 +689,7 @@ def parallelization(options, attack_workers):
     loader = options['loader']
     torch_model = options['torch_model']
 
-    batch_worker = batch_attack.TorchWorker(torch_model)
+    batch_worker = batch_attack.TorchModelWorker(torch_model)
 
     criterion = foolbox.criteria.Misclassification()
 
@@ -765,6 +755,9 @@ def train_model(options, trained_model_path):
 
     torch_model = parsing._get_torch_model(dataset)
     torch_model.train()
+
+    if cuda:
+        torch_model.cuda()
 
     optimiser = parsing.build_optimiser(optimiser_name, torch_model.parameters(), options)
 

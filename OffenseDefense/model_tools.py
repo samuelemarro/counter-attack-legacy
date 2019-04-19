@@ -1,5 +1,6 @@
 import pathlib
 
+import foolbox
 import torch
 import torch.utils.data as data
 import torchvision
@@ -8,6 +9,35 @@ import torchvision.datasets as datasets
 import numpy as np
 
 from . import utils
+
+def max_batch_predictions(foolbox_model, images, max_batch_size):
+    batch_predictions = []
+    split_images = []
+    minibatch_count = (
+        len(images) + max_batch_size - 1) // max_batch_size
+
+    for i in range(minibatch_count):
+        split_images.append(
+            np.array(images[i * max_batch_size:(i + 1) * max_batch_size]))
+
+    for subsection in split_images:
+        subsection_predictions = foolbox_model.batch_predictions(
+            subsection.astype(np.float32))
+
+        batch_predictions += list(subsection_predictions)
+
+    return np.array(batch_predictions)
+
+class MaxBatchModel(foolbox.models.DifferentiableModelWrapper):
+    def __init__(self, foolbox_model, max_batch_size):
+        super().__init__(foolbox_model)
+        self.max_batch_size = max_batch_size
+
+    def batch_predictions(self, images):
+        if len(images) > self.max_batch_size:
+            return max_batch_predictions(self.wrapped_model, images, self.max_batch_size)
+        else:
+            return self.wrapped_model.batch_predictions(images)
 
 
 class Normalisation(torch.nn.Module):
