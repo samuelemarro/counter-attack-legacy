@@ -182,8 +182,8 @@ def _get_genuine_loaders(dataset, path, batch_size, shuffle, num_workers, downlo
     else:
         raise ValueError('Dataset not supported.')
 
-    train_loader = loaders.TorchLoader(train_loader)
-    test_loader = loaders.TorchLoader(test_loader)
+    train_loader = loaders.TorchLoaderWrapper(train_loader)
+    test_loader = loaders.TorchLoaderWrapper(test_loader)
 
     return train_loader, test_loader
 
@@ -203,7 +203,7 @@ def _download_pretrained_model(dataset, path):
         raise ValueError('Dataset not supported.')
 
 
-def _get_torch_model(dataset: str) -> torch.nn.Module:
+def get_torch_model(dataset: str, is_rejector=False) -> torch.nn.Module:
     """Returns the pretrained Torch model for a given dataset.
 
     Parameters
@@ -211,6 +211,8 @@ def _get_torch_model(dataset: str) -> torch.nn.Module:
     dataset : str
         The name of the dataset. Currently supported values
         are ['cifar10', 'cifar100', 'imagenet']
+    is_rejector : bool
+        If true, it adds an extra class, 'adversarial'
 
     Raises
     ------
@@ -232,14 +234,17 @@ def _get_torch_model(dataset: str) -> torch.nn.Module:
     else:
         raise ValueError('Dataset not supported')
 
+    if is_rejector:
+        num_classes = num_classes + 1
+
     # Use the models that have shown the best top-1 accuracy
     if dataset in ['cifar10', 'cifar100']:
-        # For CIFAR10(0), we use a DenseNet with depth 190 and growth rate 40
+        # For CIFAR10(0), we use a DenseNet with depth 100 and growth rate 12
         model = cifar_models.densenet(
-            depth=190, growthRate=40, num_classes=num_classes)
+            depth=100, growthRate=12, num_classes=num_classes)
     elif dataset == 'imagenet':
         # For ImageNet, we use a Densenet with depth 161 and growth rate 48
-        model = torchvision.models.densenet161(pretrained=False)
+        model = torchvision.models.densenet161(num_classes=num_classes, pretrained=False)
     else:
         raise ValueError('Dataset not supported.')
 
@@ -277,11 +282,11 @@ def _get_pretrained_torch_model(dataset: str, base_model: torch.nn.Module, path:
     # We load the model structure, too
 
     path = pathlib.Path(path)
+    state_dict_path = path.with_name(path.name.split('.')[0] + '_weights' + ''.join(path.suffixes))
+
     if not path.exists():
         if download:
-            base_model = _get_torch_model(dataset)
             path.parent.mkdir(parents=True, exist_ok=True)
-            state_dict_path = path.with_name(path.name.split('.')[0] + '_weights' + ''.join(path.suffixes))
             _download_pretrained_model(dataset, str(state_dict_path))
             model_tools.load_state_dict(base_model, state_dict_path, False, False)
             torch.save(base_model, str(path))
@@ -289,12 +294,12 @@ def _get_pretrained_torch_model(dataset: str, base_model: torch.nn.Module, path:
             raise RuntimeError(
                 'No pretrained model found: {}. Use --download-model to automatically download missing models.'.format(path))
 
-    # model = model_tools.load_state_dict(model, path, False, False)
-    model = torch.load(str(path))
+    model = model_tools.load_state_dict(base_model, str(state_dict_path), False, False)
+    # model = torch.load(str(path))
     return model
 
 
-def _get_normalisation(dataset: str) -> model_tools.Normalisation:
+def _get_normalisation_by_name(dataset: str) -> model_tools.Normalisation:
     """Returns the normalisation for a given dataset.
 
     Parameters
@@ -327,6 +332,39 @@ def _get_normalisation(dataset: str) -> model_tools.Normalisation:
         raise ValueError('Dataset not supported.')
 
     return model_tools.Normalisation(means, stds)
+
+def apply_normalisation(model, normalisation, model_name, option_name):
+    has_normalisation = model_tools.has_normalisation(model)
+
+    logger.debug('{} has normalisation: {}'.format(model_name, has_normalisation))
+
+    if not has_normalisation and normalisation is None:
+        logger.warning('You are not applying any mean/stdev normalisation to the {}. '
+                        'You can specify it by passing {} DATASET '
+                        'or {} "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".'.format(model_name, option_name, option_name))
+
+    if has_normalisation and normalisation is not None:
+        logger.warning('You are applying mean/stdev normalisation to the {} multiple times.'.format(model_name))
+
+    if normalisation is not None:
+        logger.debug('Applying normalisation for the {}: {}'.format(model_name, normalisation))
+        try:
+            if normalisation in datasets:
+                normalisation_module = _get_normalisation_by_name(normalisation)
+            else:
+                values = normalisation.split(' ')
+                means = float(values[0]), float(
+                    values[1]), float(values[2])
+                stdevs = float(values[3]), float(
+                    values[4]), float(values[5])
+                normalisation_module = model_tools.Normalisation(means, stdevs)
+        except:
+            raise click.BadOptionUsage(option_name, 'Invalid normalisation format for the {}.'.format(model_name))
+
+        model = torch.nn.Sequential(
+            normalisation_module, model)
+
+    return model
 
 
 def _get_num_classes(dataset):
@@ -459,6 +497,8 @@ def global_options(func):
 
         num_classes = _get_num_classes(dataset)
 
+        logger.debug('CUDA is supported: {}'.format(torch.cuda.is_available()))
+
         cuda = torch.cuda.is_available() and not no_cuda
 
         device = torch.cuda.current_device() if cuda else 'cpu'
@@ -489,7 +529,7 @@ def standard_model_options(func):
     def _parse_standard_model_options(options, *args, **kwargs):
         dataset = options['dataset']
 
-        base_model = _get_torch_model(dataset)
+        base_model = get_torch_model(dataset)
 
         standard_model_options = dict(options)
         standard_model_options['base_model'] = base_model
@@ -530,13 +570,13 @@ def pretrained_model_options(func):
         if weights_path is None:
             weights_path = './pretrained_models/' + dataset + '.pth.tar'
 
-        logger.debug('Loading weights from {}'.format(weights_path))
+        logger.debug('Loading pretrained weights from {}'.format(weights_path))
 
         torch_model = _get_pretrained_torch_model(
             dataset, base_model, weights_path, download_model)
 
         torch_model = torch.nn.Sequential(
-            _get_normalisation(dataset), torch_model)
+            _get_normalisation_by_name(dataset), torch_model)
 
         torch_model.eval()
 
@@ -580,38 +620,15 @@ def custom_model_options(func):
         if custom_model_path is None:
             logger.info('No custom architecture path passed. Using default architecture {}'.format(
                 default_architecture_names[dataset]))
-            custom_torch_model = _get_torch_model(dataset)
+            custom_torch_model = get_torch_model(dataset)
+            logger.debug('Loading weights from {}'.format(custom_weights_path))
             model_tools.load_state_dict(
                 custom_torch_model, custom_weights_path, False, False)
         else:
+            logger.debug('Loading model from {}'.format(custom_model_path))
             custom_torch_model = torch.load(custom_model_path)
 
-        has_normalisation = model_tools.has_normalisation(custom_torch_model)
-
-        if not has_normalisation and custom_model_normalisation is None:
-            logger.warning('You are not applying any mean/stdev normalisation to your custom model. '
-                           'You can specify it by passing --custom-model-normalisation DATASET '
-                           'or --custom-model-normalisation "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
-
-        if has_normalisation and custom_model_normalisation is not None:
-            logger.warning('You are applying mean/stdev normalisation to the custom model multiple times.')
-
-        if custom_model_normalisation is not None:
-            try:
-                if custom_model_normalisation in datasets:
-                    custom_model_normalisation = _get_normalisation(custom_model_normalisation)
-                else:
-                    values = custom_model_normalisation.split(' ')
-                    means = float(values[0]), float(
-                        values[1]), float(values[2])
-                    stdevs = float(values[3]), float(
-                        values[4]), float(values[5])
-                    custom_model_normalisation = model_tools.Normalisation(means, stdevs)
-            except:
-                raise click.BadOptionUsage('--custom-model-normalisation', 'Invalid normalisation format for the custom model.')
-
-            custom_torch_model = torch.nn.Sequential(
-                custom_model_normalisation, custom_torch_model)
+        custom_torch_model = apply_normalisation(custom_torch_model, custom_model_normalisation, 'custom model', '--custom-model-normalisation')
 
         custom_torch_model.eval()
 
@@ -622,6 +639,7 @@ def custom_model_options(func):
             custom_torch_model, (0, 1), num_classes, channel_axis=3, device=device, preprocessing=(0, 1))
 
         if max_model_batch_size > 0:
+            logger.debug('Applying model batch limiting: {}'.format(max_model_batch_size))
             custom_foolbox_model = model_tools.MaxBatchModel(custom_foolbox_model, max_model_batch_size)
 
         custom_model_options = dict(options)
@@ -1005,32 +1023,7 @@ def substitute_options(func):
 
         substitute_torch_model = torch.load(substitute_model_path)
 
-        has_normalisation = model_tools.has_normalisation(substitute_torch_model)
-
-        if not has_normalisation and substitute_normalisation is None:
-            logger.warning('You are not applying any mean/stdev normalisation to your substitute model. '
-                           'You can specify it by passing --substitute-normalisation DATASET '
-                           'or --substitute-normalisation "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".')
-
-        if has_normalisation and substitute_normalisation is not None:
-            logger.warning('You are applying mean/stdev normalisation to the substitute model multiple times.')
-
-        if substitute_normalisation is not None:
-            try:
-                if substitute_normalisation in datasets:
-                    substitute_normalisation = _get_normalisation(substitute_normalisation)
-                else:
-                    values = substitute_normalisation.split(' ')
-                    means = float(values[0]), float(
-                        values[1]), float(values[2])
-                    stdevs = float(values[3]), float(
-                        values[4]), float(values[5])
-                    substitute_normalisation = model_tools.Normalisation(means, stdevs)
-            except:
-                raise click.BadOptionUsage('--substitute-normalisation', 'Invalid normalisation format for the substitute model.')
-
-            substitute_torch_model = torch.nn.Sequential(
-                substitute_normalisation, substitute_torch_model)
+        substitute_torch_model = apply_normalisation(substitute_torch_model, substitute_normalisation, 'substitute model', '--substitute-normalisation')
 
         substitute_torch_model.eval()
 

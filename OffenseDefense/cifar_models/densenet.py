@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import math
 
 
-__all__ = ['densenet']
+__all__ = ['densenet', 'DenseNet']
 
 
 from torch.autograd import Variable

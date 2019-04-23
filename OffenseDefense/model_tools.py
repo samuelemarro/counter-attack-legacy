@@ -1,3 +1,4 @@
+import logging
 import pathlib
 
 import foolbox
@@ -8,7 +9,9 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import numpy as np
 
-from . import utils
+from . import cifar_models, utils
+
+logger = logging.getLogger(__name__)
 
 def max_batch_predictions(foolbox_model, images, max_batch_size):
     batch_predictions = []
@@ -76,12 +79,28 @@ def save_state_dict(model, path):
     torch.save(model.state_dict(), path)
 
 def load_partial_state_dict(model, path):
-    pass
-    # TODO:
-    # Find all the keys in the target
-    # Load the dict key by key
-    # If there's a key or shape mismatch, skip
-    # Return all parameters that were not updated
+    original_dict = model.state_dict()
+    loaded_dict = torch.load(path)
+
+    copied_keys = []
+
+    for loaded_key in loaded_dict.keys():
+        assert loaded_key not in copied_keys
+
+        if loaded_key in original_dict.keys():
+            original_value = original_dict[loaded_key]
+            loaded_value = loaded_dict[loaded_key]
+
+            if original_value.shape == loaded_value.shape:
+                original_value.copy_(loaded_value)
+                copied_keys.append(loaded_key)
+            else:
+                logger.debug('Parameter mismatch for {} between original ({}) and loaded ({})'.format(loaded_key, original_value.shape, loaded_value.shape))
+        else:
+            logger.debug('No matches for {}')
+
+    unchanged_keys = [x for x in original_dict.keys() if x not in copied_keys]
+    logger.debug('Parameters not changed: {}'.format(unchanged_keys))
 
 def has_normalisation(module):
     assert isinstance(module, torch.nn.Module)
@@ -96,3 +115,11 @@ def has_normalisation(module):
             return True
 
     return False
+
+def get_last_layer(model):
+    if isinstance(model, torchvision.models.DenseNet):
+        return model.classifier
+    elif isinstance(model, cifar_models.DenseNet):
+        return model.fc
+    else:
+        raise NotImplementedError()

@@ -3,6 +3,7 @@ import logging
 import click
 import foolbox
 import numpy as np
+import pathlib
 import sklearn
 import sys
 import torch
@@ -24,22 +25,29 @@ import OffenseDefense.utils as utils
 logger = logging.getLogger('OffenseDefense')
 
 # TODO: Test preprocessing options
-# TODO: Save models, not weights
 # TODO: Allow for optional model weights?
 # TODO: Check that the pretrained model does not contain normalisation inside?
 # TODO: British vs American spelling
 # TODO: Check composite workers
-# TODO: load_partial_state_dict and get_torch_model() with optional n+1 classes
-# TODO: Finish train_approximator
 # TODO: Download the cifar100 weights for densenet-bc-100-12 (when available)
 # TODO: Upload both of them and update the links in config.ini
 # TODO: counter_attack_workers doesn't do anything!
+# TODO: Sanity check: Difference between the original model and its trained approximator
+# TODO: Verify that the transfer is successful
+# TODO: Complete the substitutes
+# TODO: In pretrained_model, you are passing the model path, not the weights one
+# TODO: 99.99% accuracy when evaluating the model for attack? Seems fishy
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
 # Substitute and Black-Box attack the defended model
 # This means that you cannot write the sanity check "Shallow is the same as
 # a Substitute that uses the original as gradient estimator"
+
+# Note: Not all adversarial attacks are successful. This means that an approximation
+# dataset will have slightly less adversarial samples. This unbalanced dataset should
+# not cause problems when training approximators, but it might cause problems when
+# training classifiers.
 
 @click.group()
 def main(*args):
@@ -182,6 +190,23 @@ def accuracy(options, top_ks):
 def detector_roc(options, score_dataset_path, no_test_warning):
     """
     Uses a detector to identify adversarial samples and computes the ROC curve.
+
+    \b
+    Stores the following results:
+        ROC Area Under Curve (ROC-AUC)
+        Best Threshold: The threshold with the best Youden Index (TPR - FPR)
+        Best Threshold True Positive Rate: The TPR at the best threshold
+        Best Threshold False Positive Rate: The FPR at the best threshold
+
+        Genuine Scores: All the scores computed for the genuine samples
+        Adversarial Scores: All the scores computed for the adversarial samples
+
+    The last three columns contain the data to build the ROC curve. These are:
+        Thresholds
+        True Positive Rates
+        False Positive Rates
+
+    Each threshold has a corresponding TPR and FPR.
     """
 
     adversarial_loader = options['adversarial_loader']
@@ -213,8 +238,8 @@ def detector_roc(options, score_dataset_path, no_test_warning):
 
     info = [['ROC AUC', '{:2.2f}%'.format(area_under_curve * 100.0)],
             ['Best Threshold', '{:2.2e}'.format(best_threshold)],
-            ['Best True Positive Rate', '{:2.2f}%'.format(best_tpr * 100.0)],
-            ['Best False Positive Rate', '{:2.2f}%'.format(best_fpr * 100.0)]]
+            ['Best Threshold True Positive Rate', '{:2.2f}%'.format(best_tpr * 100.0)],
+            ['Best Threshold False Positive Rate', '{:2.2f}%'.format(best_fpr * 100.0)]]
 
     header = ['Genuine Scores', 'Adversarial Scores',
               'Thresholds', 'True Positive Rates', 'False Positive Rates']
@@ -252,11 +277,17 @@ def detector_roc(options, score_dataset_path, no_test_warning):
 
 @main.group()
 def defense():
+    """
+    Use defenses against various attack strategies.
+    """
     pass
 
 
 @defense.group(name='rejector')
 def rejector_defense():
+    """
+    Defend using a "rejector", which is a tool (usually a detector) that rejects adversarial samples.
+    """
     pass
 
 
@@ -386,6 +417,9 @@ def black_box_rejector(options):
 
 @defense.group(name='model')
 def model_defense():
+    """
+    Defend using a custom model.
+    """
     pass
 
 
@@ -494,6 +528,9 @@ def black_box_model(options):
 
 @defense.group(name='preprocessor')
 def preprocessor_defense():
+    """
+    Defend using a "preprocessor", which modifies the image before passing it to the model.
+    """
     pass
 
 
@@ -754,7 +791,7 @@ def train_model(options, trained_model_path):
         trained_model_path = parsing.get_training_default_path(
             'train_model', dataset, start_time)
 
-    torch_model = parsing._get_torch_model(dataset)
+    torch_model = parsing.get_torch_model(dataset)
     torch_model.train()
 
     if cuda:
@@ -850,33 +887,65 @@ def approximation_dataset_rejector(options):
 @main.command()
 @parsing.global_options
 @parsing.train_options
-@parsing.standard_model_options
+@click.argument('defense_type', type=click.Choice(['model', 'preprocessor', 'rejector']))
 @click.argument('approximation_dataset_path', type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.option('--base-weights-path', type=click.Path(exists=True, file_okay=True, dir_okay=False), default=None,
+    help='The path to the file where the base weights are stored. If unspecified, it defaults to the pretrained model for the dataset.')
+@click.option('--normalisation', default=None,
+            help='The normalisation that will be applied by the model. Supports both dataset names ({}) and '
+            'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(', '.join(parsing.datasets)))
 @click.option('--trained-approximator-path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
-              help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./trained_models/train_approximator/$dataset$ $start_time$.pth.tar\'')
-def train_approximator(options, target_model_path, trained_approximator_path):
-    base_model = options['base_model']
+              help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./trained_models/train_approximator/$defense_type$/$dataset$ $start_time$.pth.tar\'')
+def train_approximator(options, defense_type, approximation_dataset_path, base_weights_path, normalisation, trained_approximator_path):
+    batch_size = options['batch_size']
     cuda = options['cuda']
     dataset = options['dataset']
     epochs = options['epochs']
-    loader = options['loader']
-    optimiser_name = options['optimiser']
+    max_batches = options['max_batches']
+    optimiser_name = options['optimiser_name']
+    shuffle = options['shuffle']
     start_time = options['start_time']
+
+    if base_weights_path is None:
+        base_weights_path = './pretrained_models/' + dataset + '_weights.pth.tar'
 
     if trained_approximator_path is None:
         trained_approximator_path = parsing.get_training_default_path(
-            'train_approximator', dataset, start_time)
+            'train_approximator/' + defense_type, dataset, start_time)
+
+    is_rejector = defense_type == 'rejector'
+    model = parsing.get_torch_model(dataset, is_rejector)
+    model_tools.load_partial_state_dict(model, base_weights_path)
+    last_layer = model_tools.get_last_layer(model)
+
+    model = parsing.apply_normalisation(model, normalisation, 'model', '--normalisation')
+
+    model.train()
+
+    if cuda:
+        model.cuda()
+
+    last_layer.reset_parameters()
+
+    optimiser = parsing.build_optimiser(optimiser_name, last_layer.parameters(), options)
 
     # Build the pretrained model and the final model (which might be n+1)
     # Transfer some layers (which? how?)
     # Train the remaining layers of the final model
     # Save the model
 
+    approximation_data = utils.load_zip(approximation_dataset_path)
+    loader = loaders.ListLoader(approximation_data, batch_size, shuffle)
 
-    training.train_torch(torch_model, loader, torch.nn.CrossEntropyLoss(),
+    if max_batches is not None:
+        loader = loaders.MaxBatchLoader(loader, max_batches)
+
+    training.train_torch(model, loader, torch.nn.CrossEntropyLoss(),
                          optimiser, epochs, cuda, classification=True)
 
-    torch.save(torch_model, trained_approximator_path)
+    pathlib.Path(trained_approximator_path).parent.mkdir(parents=True, exist_ok=True)
+
+    torch.save(model, trained_approximator_path)
 
 
 if __name__ == '__main__':

@@ -16,7 +16,7 @@ class Loader:
         raise NotImplementedError()
 
 
-class TorchLoader(Loader):
+class TorchLoaderWrapper(Loader):
     def __init__(self, torch_loader):
         self.torch_loader = torch_loader
         self._torch_iterator = None

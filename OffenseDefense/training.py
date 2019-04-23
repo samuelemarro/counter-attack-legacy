@@ -89,14 +89,15 @@ def train_torch(model, loader, loss_fn, optimizer, epochs, use_cuda, classificat
 
     return average_loss.avg, top1_accuracy, top5_accuracy
 
-def generate_approximation_dataset(foolbox_model, loader, name='approximation Dataset'):
+def generate_approximation_dataset(foolbox_model, loader, name='Approximation Dataset'):
     dataset = []
     for images, _ in IncrementalBar(name).iter(loader):
         # Note: for genuine datasets, "_" is the labels. For
         # adversarial datasets, "_" is the source images. In both
         # cases we do not need them.
 
-        labels = foolbox_model.batch_predictions(images)
+        batch_predictions = foolbox_model.batch_predictions(images)
+        labels = np.argmax(batch_predictions, axis=1)
 
         dataset_batch = list(zip(images, labels))
         dataset += dataset_batch
