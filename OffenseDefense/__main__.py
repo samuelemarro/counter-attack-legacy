@@ -37,6 +37,12 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Complete the substitutes
 # TODO: In pretrained_model, you are passing the model path, not the weights one
 # TODO: 99.99% accuracy when evaluating the model for attack? Seems fishy
+# TODO: Make the user aware that ParallelModel ignores Pytorch preprocessing
+# TODO: get_grad support for Foolbox and Composite workers. Create a request object?
+# TODO: Allow support for parallelisation in boundary_attack?
+# TODO: Support for mixed grad data?
+# TODO: Can I inherit more from foolbox.Model?
+# TODO: Sometimes a worker doesn't deregister and doesn't use the model
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
@@ -47,7 +53,7 @@ logger = logging.getLogger('OffenseDefense')
 # Note: Not all adversarial attacks are successful. This means that an approximation
 # dataset will have slightly less adversarial samples. This unbalanced dataset should
 # not cause problems when training approximators, but it might cause problems when
-# training classifiers.
+# training adversarial classifiers.
 
 @click.group()
 def main(*args):

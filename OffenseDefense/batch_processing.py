@@ -1,5 +1,100 @@
+import multiprocessing
 import queue
 import threading
+import time
+
+import numpy as np
+
+class PoolerHandler:
+    def __init__(self, batch_worker, thread_worker_count):
+        self._thread_worker_count = thread_worker_count
+        self._manager = multiprocessing.Manager()
+        self._pooler_interface = PoolerInterface(self._manager, thread_worker_count)
+        self._batch_pooler = BatchPooler(batch_worker, self._manager, self._pooler_interface, self._thread_worker_count)
+        self._input_queue = self._manager.Queue()
+        self._output_queue = self._manager.Queue()
+        self._threads = []
+
+        # Inizializza i thread
+        # Il pooler handler può gestire tutto, incluso il sistema di queue. Volendo si può passare di funzione in funzione
+        # il pooler handler e lasciargli fare tutto
+        # La funzione chiama l'handler e gli passa gli input, lui li organizza in maniera queue con i ThreadWorker (ora tutti input queue-output queue)
+        # Usando qualche sistema di id (forse c'è già?), lui sa automaticamente ricostruire l'output.
+        # In tutto questo i thread rimangono costantemente attivi, anche se forse si potrebbe mettere un evento start/stop
+        # Il BatchPooler potrebbe ricevere in __call__ il batch worker? Nah non è il caso
+
+    def run_threads(self, inputs):
+
+        # Ensure that the input and output queues are empty
+        try:
+            self._input_queue.get(timeout=1e-2)
+            assert False
+        except multiprocessing.queues.Empty:
+            pass
+
+        try:
+            self._output_queue.get(timeout=1e-2)
+            assert False
+        except multiprocessing.queues.Empty:
+            pass
+
+        for input_id, _input in enumerate(inputs):
+            self._input_queue.put((input_id, _input))
+
+class PoolerRequest:
+    def __init__(self, thread_id, input_data, batch):
+        self.thread_id = thread_id
+        self.input_data = input_data
+        self.batch = batch
+
+    def get_inputs(self):
+        if self.batch:
+            inputs = []
+            for element in self.input_data:
+                inputs.append((self.thread_id, element))
+        else:
+            inputs = [(self.thread_id, self.input_data)]
+
+        return inputs
+
+class PoolerInterface:
+    """
+    A 100% pickable interface for communicating with BatchPooler
+    (which isn't pickable because it contains a BatchWorker).
+    """
+    def __init__(self, manager, thread_worker_count):
+        # thread_id is thread-dependent
+        self.thread_id = None
+        
+        # All these objects are shared and thread-safe
+        self.manager = manager
+        self.requests = manager.Queue()
+        self.output_queues = [manager.Queue() for _ in range(thread_worker_count)]
+        self.registration_lock = manager.Lock()
+        self.registration_counter = manager.Value('I', 0)
+        self.deregistration_counter = manager.Value('I', 0)
+
+    def register(self):
+        with self.registration_lock:
+            thread_id = self.registration_counter.value
+            self.registration_counter.value = self.registration_counter.value + 1
+
+            self.thread_id = thread_id
+
+    def deregister(self):
+        # print('Deregistering')
+        with self.registration_lock:
+            self.deregistration_counter.value = self.deregistration_counter.value + 1
+
+    def call(self, input_data, batch):
+        #print('Calling from {}'.format(self.thread_id))
+        
+        assert self.thread_id is not None
+
+        request = PoolerRequest(self.thread_id, input_data, batch)
+        self.requests.put(request)
+
+        return self.output_queues[self.thread_id].get()
 
 
 class BatchPooler:
@@ -14,70 +109,81 @@ class BatchPooler:
     (thread workers).
     """
 
-    def __init__(self, batch_worker):
-        self.inputs = {}
-        self.outputs = {}
-        self.registered_ids = []
-        self.deregistered_ids = queue.Queue()
+    def __init__(self, batch_worker, manager, pooler_interface, thread_worker_count):
         self.batch_worker = batch_worker
-        self.running = False
+        self.pooler_interface = pooler_interface
+        self.thread_worker_count = thread_worker_count
 
-    def register(self):
-        # Only register before execution
-        assert not self.running
-        new_id = threading.get_ident()
-        self.registered_ids.append(new_id)
-        self.inputs[new_id] = queue.Queue()
-        self.outputs[new_id] = queue.Queue()
+    def _collect_requests(self):
+        requests = []
 
-    def deregister(self):
-        # Schedule for cleanup
-        self.deregistered_ids.put(threading.get_ident())
-
-    def call(self, input):
-        thread_id = threading.get_ident()
-        self.inputs[thread_id].put(input)
-        return self.outputs[thread_id].get()
-
-    def _get_deregistered_id(self):
         try:
-            deregistered_id = self.deregistered_ids.get(timeout=1e-5)
-        except queue.Empty:
-            deregistered_id = None
+            while True:
+                requests.append(self.pooler_interface.requests.get(timeout=1e-5))
+        except multiprocessing.queues.Empty:
+            # No more requests
+            pass
 
-        return deregistered_id
+        return requests
+
 
     def run(self):
-        self.running = True
-        while self.registered_ids:
-            inputs = []
-            active_ids = []
+        # Wait for all threads to register
+        while self.pooler_interface.registration_counter.value < self.thread_worker_count:
+            time.sleep(0.01)
 
-            for registered_id in self.registered_ids:
-                try:
-                     input = self.inputs[registered_id].get(timeout=1e-5)
-                except queue.Empty:
-                    input = None
+        # print('All threads registered')
 
-                if input is not None:
-                    inputs.append(input)
-                    active_ids.append(registered_id)
+        while self.pooler_interface.deregistration_counter.value < self.thread_worker_count:
+            requests = self._collect_requests()
 
-            if active_ids:
-                outputs = self.batch_worker(inputs)
-                for active_id, output in zip(active_ids, outputs):
-                    self.outputs[active_id].put(output)
+            # print('Requests: {}. Deregistered: {}/{}'.format(len(requests), self.pooler_interface.deregistration_counter.value, self.pooler_interface.registration_counter.value))
 
-            # Cleanup
-            deregistered_id = self._get_deregistered_id()
-            while deregistered_id is not None:
-                index = self.registered_ids.index(deregistered_id)
-                del self.registered_ids[index]
-                del self.inputs[deregistered_id]
-                del self.outputs[deregistered_id]
+            if requests:
+                thread_ids = [request.thread_id for request in requests]
 
-                deregistered_id = self._get_deregistered_id()
+                # Check that all threads are unique
+                assert len(np.unique(thread_ids)) == len(thread_ids)
 
+                # inputs is a list of (thread_id, input_data) tuples
+                inputs = []
+                for request in requests:
+                    inputs += request.get_inputs()
+
+                input_datas = [input_data for _, input_data in inputs]
+                # print(len(input_datas))
+
+                output_datas = self.batch_worker(input_datas)
+
+                assert len(input_datas) == len(output_datas)
+
+                # Match the output data with its thread_id
+                # outputs is a list of (thread_id, output_data) tuples
+                outputs = []
+                for (thread_id, _), output_data in zip(inputs, output_datas):
+                    outputs.append((thread_id, output_data))
+
+                assert len(inputs) == len(outputs)
+
+                # Match all outputs with their requests
+                for request in requests:
+                    matching_outputs = []
+                    for thread_id, output_data in outputs:
+                        # print('Thread id in output: {}'.format(thread_id))
+                        if request.thread_id == thread_id:
+                            # print('Adding for thread {}'.format(thread_id))
+                            matching_outputs.append(output_data)
+
+                    
+                    # print('Returning {} element(s).'.format(len(matching_outputs)))
+                    if request.batch:
+                        assert len(matching_outputs) > 0
+                        self.pooler_interface.output_queues[request.thread_id].put(matching_outputs)
+                    else:
+                        assert len(matching_outputs) == 1
+                        self.pooler_interface.output_queues[request.thread_id].put(matching_outputs[0])
+
+        # print('No more registered ids')
 
 class BatchWorker:
     def __init__(self):
@@ -95,31 +201,34 @@ class ThreadWorker:
         pass
 
 
-def _parallel_thread_function(pooler, thread_worker, output_queue):
-    pooler.register()
-    thread_worker(pooler, output_queue)
-    pooler.deregister()
+def _parallel_thread_function(pooler_interface, thread_worker, output_queue):
+    pooler_interface.register()
+    thread_worker(pooler_interface, output_queue)
+    pooler_interface.deregister()
 
 
-def run_queue_threads(batch_worker, thread_workers, input_queue, data):
+def run_queue_threads(manager, batch_worker, thread_workers, input_queue, data):
     """
     Manages threading and queuing for batch and thread workers.
     """
-    pooler = BatchPooler(batch_worker)
+    pooler = BatchPooler(batch_worker, manager, len(thread_workers))
+    pooler_interface = pooler.pooler_interface
     threads = []
 
-    output_queue = queue.Queue()
+    output_queue = manager.Queue()
 
     for i, data_entry in enumerate(data):
         input_queue.put((i, data_entry))
 
     for thread_worker in thread_workers:
-        thread = threading.Thread(target=_parallel_thread_function,
-                                  args=(pooler, thread_worker, output_queue))
+        import dill.detect as detect
+        thread = multiprocessing.Process(target=_parallel_thread_function,
+                                  args=(pooler_interface, thread_worker, output_queue))
 
         threads.append(thread)
         thread.start()
 
+    # print('About to run!')
     pooler.run()
     for thread in threads:
         thread.join()

@@ -68,10 +68,10 @@ class AdversarialDistance(DistanceTool):
         batch_predictions = self.foolbox_model.batch_predictions(images)
         labels = np.argmax(batch_predictions, axis=1)
 
-        adversarials, _, _ = batch_attack.get_adversarials(self.foolbox_model,
-                                                           images,
+        adversarials, _, _ = batch_attack.get_adversarials(images,
                                                            labels,
                                                            self.attack,
+                                                           self.foolbox_model,
                                                            False,
                                                            batch_worker=self.batch_worker,
                                                            num_workers=self.num_workers)
