@@ -47,8 +47,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
                 loader: loaders.Loader,
                 attack: foolbox.attacks.Attack,
                 p: int,
-                batch_worker: batch_processing.BatchWorker = None,
-                num_workers: int = 50,
+                parallel_pooler = False,
                 save_adversarials: bool = False,
                 name: str = 'Attack Test') -> Tuple[float, np.ndarray]:
 
@@ -72,7 +71,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
             correct_count, samples_count - correct_count))
 
         successful_adversarials, successful_images, successful_labels = batch_attack.get_adversarials(
-            correct_images, correct_labels, attack, foolbox_model, True, batch_worker, num_workers)
+            correct_images, correct_labels, attack, foolbox_model, parallel_pooler, True)
 
         successful_attack_count += len(successful_adversarials)
         logger.debug('{} successful attacks ({} removed)'.format(
@@ -121,8 +120,7 @@ def shallow_rejector_test(standard_model: foolbox.models.Model,
                           attack,
                           p,
                           rejector,
-                          standard_batch_worker: batch_processing.BatchWorker = None,
-                          num_workers: int = 50,
+                          standard_parallel_pooler = None,
                           name: str = 'Shallow Rejector Attack'):
     samples_count = 0
     correct_count = 0
@@ -146,7 +144,7 @@ def shallow_rejector_test(standard_model: foolbox.models.Model,
         # Third step: Generate adversarial samples against the standard model (removing failed adversarials)
         assert len(images) == len(labels)
         adversarials, images, labels = batch_attack.get_adversarials(
-            images, labels, attack, standard_model, True, standard_batch_worker, num_workers)
+            images, labels, attack, standard_model, standard_parallel_pooler, True)
 
         # Fourth step: Remove adversarial samples that are detected as such
         batch_valid = rejector.batch_valid(adversarials)
@@ -177,8 +175,7 @@ def transfer_test(standard_model: foolbox.models.Model,
                        attack,
                        p,
                        defended_model: foolbox.models.Model,
-                       standard_batch_worker: batch_processing.BatchWorker = None,
-                       num_workers: int = 50,
+                       standard_parallel_pooler = None,
                        name: str = 'Shallow Model Attack'):
     samples_count = 0
     correct_count = 0
@@ -198,7 +195,7 @@ def transfer_test(standard_model: foolbox.models.Model,
         # Second step: Generate adversarial samples against the standard model (removing failed adversarials)
         assert len(images) == len(labels)
         adversarials, images, labels = batch_attack.get_adversarials(
-            images, labels, attack, standard_model, True, standard_batch_worker, num_workers)
+            images, labels, attack, standard_model, standard_parallel_pooler, True)
 
         # Third step: Remove adversarial samples that are correctly classified by the defended model
         adversarial_predictions = defended_model.batch_predictions(
@@ -273,8 +270,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
                          loader: loaders.Loader,
                          attack: foolbox.attacks.Attack,
                          p: int,
-                         batch_worker: batch_processing.BatchWorker,
-                         num_workers: int = 50,
+                         parallel_pooler = None,
                          name: str = 'Parallelization Test'):
 
     samples_count = 0
@@ -294,7 +290,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         # Run the parallel attack
         parallel_adversarials, parallel_images, _ = batch_attack.get_adversarials(
-            correct_images, correct_labels, attack, foolbox_model, True, batch_worker=batch_worker, num_workers=num_workers)
+            correct_images, correct_labels, attack, foolbox_model, parallel_pooler, True)
 
         parallel_attack_count += len(parallel_adversarials)
 
@@ -303,7 +299,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         # Run the standard attack
         standard_adversarials, standard_images, _ = batch_attack.get_adversarials(
-            correct_images, correct_labels, attack, foolbox_model, True)
+            correct_images, correct_labels, attack, foolbox_model, None, True)
 
         standard_attack_count += len(standard_adversarials)
 

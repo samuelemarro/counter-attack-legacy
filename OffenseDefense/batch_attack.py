@@ -172,18 +172,12 @@ class CompositeModelWorker(ModelWorker):
         return zip(foolbox_predictions, torch_grads)
 
 
-class QueueAttackWorker(batch_processing.ThreadWorker):
-    """A ThreadWorker that supports attacking samples in a queue-like
-    fashion. Useful for situations where the batch size is bigger than
-    what the model can support.
-    """
-
+class AttackWorker(batch_processing.ThreadWorker):
     def __init__(self,
                  attack: foolbox.attacks.Attack,
                  gradient: bool,
-                 input_queue: multiprocessing.Queue,
                  template_foolbox_model : foolbox.models.Model):
-        """Initializes the QueueAttackWorker.
+        """Initializes the AttackWorker.
 
         Parameters
         ----------
@@ -191,45 +185,37 @@ class QueueAttackWorker(batch_processing.ThreadWorker):
             The attack that will be used to find adversarial samples.
         gradient : bool
             Whether to use gradient computation.
-        foolbox_model : foolbox.models.Model
-            The model that will be attacked.
-        input_queue : multiprocessing.Queue
-            The Queue from which the worker will read the images to
-            attack. Must be the same Queue passed to run_queue_threads.
         template_foolbox_model : foolbox.models.Model
             This Foolbox model will be used to define the properties
             (i.e. num_classes, bounds...) of the parallel model.
 
         """
-        assert attack._default_model is None
+        attack = copy.copy(attack)
+        attack._default_model = None
 
         self.attack = attack
         self.gradient = gradient
-        self.input_queue = input_queue
         self.num_classes = template_foolbox_model.num_classes()
         self.bounds = template_foolbox_model.bounds()
         self.channel_axis = template_foolbox_model.channel_axis()
-        
-    def __call__(self, pooler_interface, return_queue):
+
+    def __call__(self, _input, pooler_interface):
         if self.gradient:
             parallel_model = DifferentiableParallelModel(
                 pooler_interface, self.num_classes, self.bounds, self.channel_axis)
         else:
             parallel_model = ParallelModel(pooler_interface, self.num_classes, self.bounds, self.channel_axis)
-        while True:
-            try:
-                i, (image, label) = self.input_queue.get(timeout=1e-2)
-                adversarial = foolbox.Adversarial(parallel_model,
-                                                  self.attack._default_criterion,
-                                                  image,
-                                                  label,
-                                                  self.attack._default_distance,
-                                                  self.attack._default_threshold)
-                adversarial_image = self.attack(adversarial)
-                return_queue.put((i, adversarial_image))
-            except multiprocessing.queues.Empty:
-                # No more inputs, we can stop
-                return
+
+        image, label = _input
+        adversarial = foolbox.Adversarial(parallel_model,
+                                        self.attack._default_criterion,
+                                        image,
+                                        label,
+                                        self.attack._default_distance,
+                                        self.attack._default_threshold)
+        adversarial_image = self.attack(adversarial)
+        
+        return adversarial_image
 
 def __identity(x):
     return x
@@ -308,35 +294,20 @@ class DifferentiableParallelModel(ParallelModel):
         raise NotImplementedError()
 
 
-def run_batch_attack(batch_worker, attack, template_foolbox_model, images, labels, num_workers):
-    with multiprocessing.Manager() as manager:
-        assert len(images) == len(labels)
+def run_batch_attack(parallel_pooler, images, labels):
+    data = list(zip(images, labels))
+    adversarials = parallel_pooler.run(data)
 
-        input_queue = manager.Queue()
-        data = zip(images, labels)
+    assert len(adversarials) == len(images)
 
-        gradient = batch_worker.has_gradient()
-
-        assert attack._default_model == template_foolbox_model
-
-        # Having a default model makes the attack non pickable
-        attack = copy.copy(attack)
-        attack._default_model = None
-
-        attack_workers = [QueueAttackWorker(
-            attack, gradient, input_queue, template_foolbox_model) for _ in range(num_workers)]
-
-        results = batch_processing.run_queue_threads(
-            manager, batch_worker, attack_workers, input_queue, data)
-
-    assert len(results) == len(images)
-
-    return results
+    return adversarials
 
 
-def run_individual_attack(attack, images, labels):
+def run_individual_attack(attack, foolbox_model, images, labels):
     assert len(images) == len(labels)
 
+    attack = copy.copy(attack)
+    attack._default_model = foolbox_model #TODO: Ugly
     adversarials = []
 
     for image, label in zip(images, labels):
@@ -378,22 +349,18 @@ def get_approved_samples(foolbox_model: foolbox.models.Model,
 
     return _filter['images'], _filter['image_labels']
 
-
-"""
-Finds the adversarial samples.
-
-Note: Some adversarial samples might sometimes be non-adversarial, due to the fact that
-they're close to the boundary and can switch class depending on the approximation.
-"""
-
-
 def get_adversarials(images: np.ndarray,
                      labels: np.ndarray,
+                     foolbox_model : foolbox.models.Model,
                      adversarial_attack: foolbox.attacks.Attack,
-                     template_foolbox_model : foolbox.models.Model,
-                     remove_failed: bool,
-                     batch_worker: batch_processing.BatchWorker = None,
-                     num_workers: int = 50):
+                     parallel_pooler,
+                     remove_failed: bool):
+    """
+    Finds adversarial samples.
+
+    Note: Some adversarial samples might sometimes be non-adversarial, due to the fact that
+    they're close to the boundary and can switch class depending on the approximation.
+    """
     if len(images) != len(labels):
         raise ValueError('images and labels must have the same length.')
 
@@ -401,18 +368,12 @@ def get_adversarials(images: np.ndarray,
     _filter['images'] = images
     _filter['image_labels'] = labels
 
-    if batch_worker is None:
-        assert adversarial_attack._default_model == template_foolbox_model
+    if parallel_pooler is None:
         _filter['adversarials'] = run_individual_attack(
-            adversarial_attack, _filter['images'], _filter['image_labels'])
+            foolbox_model, adversarial_attack, _filter['images'], _filter['image_labels'])
 
     else:
-        _filter['adversarials'] = run_batch_attack(batch_worker,
-                                                   adversarial_attack,
-                                                   template_foolbox_model,
-                                                   _filter['images'],
-                                                   _filter['image_labels'],
-                                                   num_workers)
+        _filter['adversarials'] = run_batch_attack(parallel_pooler, images, labels)
 
     successful_adversarial_indices = [i for i in range(
         len(_filter['adversarials'])) if _filter['adversarials'][i] is not None]

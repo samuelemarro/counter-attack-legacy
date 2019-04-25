@@ -11,6 +11,7 @@ import torch
 import OffenseDefense
 import OffenseDefense.attacks as attacks
 import OffenseDefense.batch_attack as batch_attack
+import OffenseDefense.batch_processing as batch_processing
 import OffenseDefense.defenses as defenses
 import OffenseDefense.detectors as detectors
 import OffenseDefense.distance_tools as distance_tools
@@ -42,7 +43,10 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Allow support for parallelisation in boundary_attack?
 # TODO: Support for mixed grad data?
 # TODO: Can I inherit more from foolbox.Model?
-# TODO: Sometimes a worker doesn't deregister and doesn't use the model
+# TODO: __enter__ and __exit__ for PoolerHandler?
+# TODO: standard and parallel are treated completely differently, and might have different models or attacks
+# TODO: YOU CHANGED THE SOURCE CODE IN pickle.py!
+
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
@@ -103,14 +107,17 @@ def attack(options, adversarial_dataset_path, no_test_warning):
 
     criterion = foolbox.criteria.Misclassification()
 
-    if attack_parallelization:
-        batch_worker = batch_attack.TorchModelWorker(torch_model)
-    else:
-        batch_worker = None
-
     attack = parsing.parse_attack(
         attack_name, attack_p, foolbox_model, criterion)
 
+    if attack_parallelization:
+        batch_worker = batch_attack.TorchModelWorker(torch_model)
+        thread_worker = batch_attack.AttackWorker(attack, True, foolbox_model)
+        parallel_pooler = batch_processing.ParallelPooler(batch_worker, thread_worker, attack_workers)
+    else:
+        parallel_pooler = None
+
+    
     save_adversarials = adversarial_dataset_path is not None
 
     if dataset_type == 'test' and save_adversarials and not no_test_warning:
@@ -119,7 +126,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
                        '\'--no-test-warning\'.')
 
     samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, attack_p,
-                                                                                                                                  batch_worker, attack_workers, save_adversarials=save_adversarials)
+                                                                                                                                  parallel_pooler=parallel_pooler, save_adversarials=save_adversarials)
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count

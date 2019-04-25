@@ -14,7 +14,7 @@ import tarfile
 import torch
 import torchvision
 
-from . import attacks, batch_attack, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, rejectors, utils
+from . import attacks, batch_attack, batch_processing, cifar_models, defenses, detectors, distance_tools, loaders, model_tools, training, rejectors, utils
 
 default_architecture_names = {
     'cifar10': 'densenet (depth=100, growth_rate=12)',
@@ -421,8 +421,11 @@ def parse_distance_tool(tool_name, options, failure_value):
             # We also use it because some attacks require the gradient.
 
             batch_worker = batch_attack.TorchModelWorker(torch_model)
+            thread_worker = batch_attack.AttackWorker(counter_attack, True, foolbox_model)
+            parallel_pooler = batch_processing.ParallelPooler(batch_worker, thread_worker, counter_attack_workers)
+            
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                               defense_p, failure_value, batch_worker, counter_attack_workers)
+                                                               defense_p, failure_value, parallel_pooler=parallel_pooler)
         else:
             distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
                                                                defense_p, failure_value)
