@@ -30,18 +30,20 @@ class AdversarialDistance(DistanceTool):
                  attack: foolbox.attacks.Attack,
                  p: np.float,
                  failure_value: np.float,
-                 parallel_pooler = None,
+                 batch_worker: batch_processing.BatchWorker = None,
+                 num_workers: int = 50,
                  name: str = None):
-        if name is None:
-            name = 'Adversarial Distance ({})'.format(attack.name())
-
-        super().__init__(name)
-
         self.foolbox_model = foolbox_model
         self.attack = attack
         self.p = p
         self.failure_value = failure_value
-        self.parallel_pooler = parallel_pooler
+        self.batch_worker = batch_worker
+        self.num_workers = num_workers
+
+        if name is None:
+            name = attack.name()
+
+        self.name = name
 
     def get_distance(self, image):
         predictions = self.foolbox_model.predictions(image)
@@ -66,11 +68,13 @@ class AdversarialDistance(DistanceTool):
         batch_predictions = self.foolbox_model.batch_predictions(images)
         labels = np.argmax(batch_predictions, axis=1)
 
-        adversarials, _, _ = batch_attack.get_adversarials(images,
+        adversarials, _, _ = batch_attack.get_adversarials(self.foolbox_model,
+                                                           images,
                                                            labels,
                                                            self.attack,
-                                                           self.parallel_pooler,
-                                                           False)
+                                                           False,
+                                                           batch_worker=self.batch_worker,
+                                                           num_workers=self.num_workers)
 
         assert len(adversarials) == len(images)
 
