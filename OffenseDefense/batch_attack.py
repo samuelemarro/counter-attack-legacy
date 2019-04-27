@@ -78,9 +78,6 @@ class TorchModelWorker(ModelWorker):
         get_grad = np.array([x[0] for x in inputs])
         data = [x[1] for x in inputs]
 
-        # Either all require grad, or none
-        # assert np.all(get_grad) or np.all(np.logical_not(get_grad))
-
         gradient_indices = [i for i in range(len(get_grad)) if get_grad[i]]
         predictions_indices = [i for i in range(len(get_grad)) if not get_grad[i]]
 
@@ -142,7 +139,14 @@ class FoolboxModelWorker(ModelWorker):
         return True
 
     def __call__(self, inputs):
-        images = np.array(inputs)
+        get_grad = np.array([x[0] for x in inputs])
+
+        # Gradient is not supported
+        assert np.all(np.logical_not(get_grad))
+
+        data = [x[1] for x in inputs]
+
+        images = np.array(data)
         outputs = self.foolbox_model.batch_predictions(images)
         return outputs
 
@@ -160,8 +164,14 @@ class CompositeModelWorker(ModelWorker):
 
     def __call__(self, inputs):
         #print(inputs[0][0].shape)
-        images = [np.array(x[0]) for x in inputs]
-        foolbox_predictions = self.predictions_foolbox_worker(images)
+
+        data = [x[1] for x in inputs]
+        images = [np.array(x[0]) for x in data]
+
+        foolbox_inputs = [(False, image) for image in images]
+        foolbox_predictions = self.predictions_foolbox_worker(foolbox_inputs)
+
+
         torch_predictions_and_grads = self.estimate_torch_worker(inputs)
 
         torch_grads = [grad for _, grad in torch_predictions_and_grads]
@@ -248,7 +258,7 @@ def run_batch_attack(foolbox_model, batch_worker, attack, images, labels, num_wo
     assert len(images) == len(labels)
 
     input_queue = queue.Queue()
-    data = zip(images, labels)
+    data = list(zip(images, labels))
 
     gradient = batch_worker.has_gradient()
 
@@ -288,7 +298,7 @@ def get_correct_samples(foolbox_model: foolbox.models.Model,
     correctly_classified = np.nonzero(np.equal(_filter['image_labels'],
                                                _filter['ground_truth_labels']))[0]
 
-    _filter.filter(correctly_classified, 'successful_classification')
+    _filter.filter(correctly_classified)
 
     return _filter['images'], _filter['image_labels']
 
@@ -303,7 +313,7 @@ def get_approved_samples(foolbox_model: foolbox.models.Model,
 
     batch_valid = rejector.batch_valid(_filter['images'])
     approved_indices = np.nonzero(batch_valid)[0]
-    _filter.filter(approved_indices, name='Approved')
+    _filter.filter(approved_indices)
 
     return _filter['images'], _filter['image_labels']
 
@@ -348,8 +358,7 @@ def get_adversarials(foolbox_model: foolbox.models.Model,
         successful_adversarial_indices, dtype=np.int)
 
     if remove_failed:
-        _filter.filter(successful_adversarial_indices,
-                       'successful_adversarial')
+        _filter.filter(successful_adversarial_indices)
 
         # Convert to Numpy array after the failed samples have been removed
         _filter['adversarials'] = np.array(_filter['adversarials'])

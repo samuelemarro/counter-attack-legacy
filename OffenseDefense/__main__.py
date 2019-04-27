@@ -36,8 +36,10 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Verify that the transfer is successful
 # TODO: Complete the substitutes
 # TODO: In pretrained_model, you are passing the model path, not the weights one
-# TODO: 99.99% accuracy when evaluating the model for attack? Seems fishy
 # TODO: standard and parallel are treated completely differently, and might have different models or attacks
+# TODO: Attack strategy object? Merge batch_attack and batch_processing? In general, simplify parallelization
+# TODO: Find a standard format for placeholder in --help
+# TODO: Instead of doing __call__((get_grad, image)), do __call__(get_grad, image[,label?])
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
@@ -49,6 +51,11 @@ logger = logging.getLogger('OffenseDefense')
 # dataset will have slightly less adversarial samples. This unbalanced dataset should
 # not cause problems when training approximators, but it might cause problems when
 # training adversarial classifiers.
+
+# Note: When preparing the adversarial dataset, the model accuracy will always be around 100%
+# because you're running the attack on the train set
+
+# Note: For ImageNet, we evaluate on the validation set
 
 @click.group()
 def main(*args):
@@ -477,6 +484,62 @@ def shallow_model(options):
                        info=info, header=header)
 
 
+@model_defense.command(name='substitute')
+@parsing.global_options
+@parsing.dataset_options('test', 'test')
+@parsing.standard_model_options
+@parsing.test_options('defense/model/substitute')
+@parsing.custom_model_options
+@parsing.attack_options(parsing.differentiable_attacks)
+@parsing.substitute_options
+def substitute_model(options):
+    attack_name = options['attack_name']
+    attack_parallelization = options['attack_parallelization']
+    attack_workers = options['attack_workers']
+    command = options['command']
+    custom_foolbox_model = options['custom_foolbox_model']
+    loader = options['loader']
+    attack_p = options['attack_p']
+    results_path = options['results_path']
+    substitute_foolbox_model = options['substitute_foolbox_model']
+    substitute_torch_model = options['substitute_torch_model']
+
+    composite_model = foolbox.models.CompositeModel(custom_foolbox_model, substitute_foolbox_model)
+    
+    if attack_parallelization:
+        composite_batch_worker = batch_attack.CompositeModelWorker(custom_foolbox_model, substitute_torch_model)
+    else:
+        composite_batch_worker = None
+
+    criterion = foolbox.criteria.Misclassification()
+
+    # The attack will be against the substitute model with estimated gradients
+    attack = parsing.parse_attack(
+        attack_name, attack_p, composite_model, criterion)
+
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_p,
+                                                                                               composite_batch_worker,
+                                                                                               attack_workers, name='Substitute Model Attack')
+
+    accuracy = correct_count / samples_count
+    success_rate = successful_attack_count / correct_count
+
+    info = [
+        ['Base Accuracy', '{:2.2f}%'.format(
+            accuracy * 100.0)],
+        ['Base Attack Success Rate', '{:2.2f}%'.format(
+            success_rate * 100.0)],
+        ['Samples Count', str(samples_count)],
+        ['Correct Count', str(correct_count)],
+        ['Successful Attack Count', str(successful_attack_count)]
+    ]
+
+    header = ['Distances']
+
+    utils.save_results(results_path, table=[distances], command=command,
+                       info=info, header=header)
+
+
 @model_defense.command(name='black-box')
 @parsing.global_options
 @parsing.dataset_options('test', 'test')
@@ -779,7 +842,7 @@ def parallelization(options):
 @parsing.dataset_options('train', 'train')
 @parsing.train_options
 @click.option('--trained-model-path', type=click.Path(file_okay=True, dir_okay=False), default=None,
-              help='The path to the file where the model will be saved. If unspecified, it defaults to \'./train_model/$dataset$ $start_time$.pth.tar\'')
+              help='The path to the file where the model will be saved. If unspecified, it defaults to \'./train_model/$dataset $start_time.pth.tar\'')
 def train_model(options, trained_model_path):
     cuda = options['cuda']
     dataset = options['dataset']
@@ -896,7 +959,7 @@ def approximation_dataset_rejector(options):
             help='The normalisation that will be applied by the model. Supports both dataset names ({}) and '
             'channel stds-means (format: "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" including quotes).'.format(', '.join(parsing.datasets)))
 @click.option('--trained-approximator-path', type=click.Path(exists=False, file_okay=True, dir_okay=False), default=None,
-              help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./trained_models/train_approximator/$defense_type$/$dataset$ $start_time$.pth.tar\'')
+              help='The path to the file where the approximator will be saved. If unspecified, it defaults to \'./trained_models/train_approximator/$defense_type/$dataset $start_time.pth.tar\'')
 def train_approximator(options, defense_type, approximation_dataset_path, base_weights_path, normalisation, trained_approximator_path):
     batch_size = options['batch_size']
     cuda = options['cuda']
@@ -926,6 +989,7 @@ def train_approximator(options, defense_type, approximation_dataset_path, base_w
     if cuda:
         model.cuda()
 
+    # Reinitialise the last layer
     last_layer.reset_parameters()
 
     optimiser = parsing.build_optimiser(optimiser_name, last_layer.parameters(), options)

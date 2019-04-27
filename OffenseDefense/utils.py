@@ -316,12 +316,10 @@ def load_json(path):
 
 
 class Filter(dict):
-    def __init__(self, o=None, custom_filters={}, **kwArgs):
+    def __init__(self, o=None, **kwArgs):
         if o is None:
             o = {}
         super().__init__(o, **kwArgs)
-        self.custom_filters = {}
-        self.filter_stats = collections.OrderedDict({})
 
     def __setitem__(self, key, value):
         value_length = len(value)
@@ -335,27 +333,15 @@ class Filter(dict):
         for key in self.keys():
             super().__setitem__(key, [])
 
-    def filter(self, indices, name=None):
-        if name in self.filter_stats:
-            raise ValueError('\'name\' must be unique')
-
-        if name == None:
-            name = 'filter_{}'.format(len(self.filter_stats))
-
+    def filter(self, indices):
         if len(indices) == 0:
             self.empty()
             return
 
         for key in self.keys():
-            if key in self.custom_filters:
-                super().__setitem__(
-                    key, self.custom_filters[key](self[key], indices))
-            elif isinstance(self[key], np.ndarray):
+            if isinstance(self[key], np.ndarray):
                 super().__setitem__(key, self[key][indices])
             elif isinstance(self[key], list):
                 super().__setitem__(key, [self[key][i] for i in indices])
             else:
-                raise NotImplementedError('The filter for collection "{}" of type {} is not implemented.'
-                                          'Please define a custom filter by setting custom_filters[\'{}\']'.format(key, type(key), key))
-
-        self.filter_stats[name] = len(indices)
+                raise NotImplementedError('The filter for collection "{}" of type {} is not implemented.'.format(key, type(key)))

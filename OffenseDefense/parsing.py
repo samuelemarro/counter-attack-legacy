@@ -341,7 +341,7 @@ def apply_normalisation(model, normalisation, model_name, option_name):
     if not has_normalisation and normalisation is None:
         logger.warning('You are not applying any mean/stdev normalisation to the {}. '
                         'You can specify it by passing {} DATASET '
-                        'or {} "RED_MEAN BLUE_MEAN GREEN_MEAN RED_STDEV GREEN_STDEV BLUE_STDEV".'.format(model_name, option_name, option_name))
+                        'or {} "red_mean green_mean blue_mean red_stdev green_stdev blue_stdev" (including quotes).'.format(model_name, option_name, option_name))
 
     if has_normalisation and normalisation is not None:
         logger.warning('You are applying mean/stdev normalisation to the {} multiple times.'.format(model_name))
@@ -505,6 +505,8 @@ def global_options(func):
 
         logging.getLogger('OffenseDefense').setLevel(log_level.upper())
 
+        logger.info('Batch size: {}'.format(batch_size))
+
         global_options = {
             'batch_size': batch_size,
             'command': command,
@@ -654,9 +656,10 @@ def dataset_options(default_dataset, recommended=None):
     def _dataset_options(func):
         @click.option('--data-folder', default=None, type=click.Path(file_okay=False, dir_okay=True),
                       help='The path to the folder where the dataset is stored (or will be downloaded). '
-                      'If unspecified, it defaults to \'./data/genuine/$dataset$\'.')
+                      'If unspecified, it defaults to \'./data/genuine/$dataset\'.')
         @click.option('--dataset-type', default=default_dataset, show_default=True, type=click.Choice(['train', 'test']),
-                      help='Sets the dataset (train or test) that will be used.')
+                      help='Sets the dataset (train or test) that will be used. For ImageNet, we use the validation set '
+                      'as test dataset.')
         @click.option('--download-dataset', is_flag=True,
                       help='If the dataset files do not exist, download them.')
         @click.option('--loader-workers', default=2, show_default=True, type=click.IntRange(0, None),
@@ -699,15 +702,24 @@ def dataset_options(default_dataset, recommended=None):
 
 def train_options(func):
     @click.argument('epochs', type=click.IntRange(1, None))
-    @click.option('--optimiser', type=click.Choice(['adam', 'sgd']), default='adam', show_default=True)
-    @click.option('--learning_rate', type=float, default=1e-3, show_default=True)
-    @click.option('--weight-decay', type=float, default=0, show_default=True)
-    @click.option('--adam-betas', nargs=2, type=click.Tuple([float, float]), default=(0.9, 0.999), show_default=True)
-    @click.option('--adam-epsilon', type=float, default=1e-8, show_default=True)
-    @click.option('--adam-amsgrad', is_flag=True)
-    @click.option('--sgd-momentum', type=float, default=0, show_default=True)
-    @click.option('--sgd-dampening', type=float, default=0, show_default=True)
-    @click.option('--sgd-nesterov', is_flag=True)
+    @click.option('--optimiser', type=click.Choice(['adam', 'sgd']), default='adam', show_default=True,
+            help='The optimiser that will be used for training.')
+    @click.option('--learning_rate', type=float, default=1e-3, show_default=True,
+            help='The learning rate for the optimiser.')
+    @click.option('--weight-decay', type=float, default=0, show_default=True,
+            help='The weight decay for the optimiser.')
+    @click.option('--adam-betas', nargs=2, type=click.Tuple([float, float]), default=(0.9, 0.999), show_default=True,
+            help='The two beta values. Ignored if the optimiser is not \'adam\'')
+    @click.option('--adam-epsilon', type=float, default=1e-8, show_default=True,
+            help='The value of epsilon. Ignored if the optimiser is not \'adam\'')
+    @click.option('--adam-amsgrad', is_flag=True,
+            help='Enables AMSGrad. Ignored if the optimiser is not \'adam\'')
+    @click.option('--sgd-momentum', type=float, default=0, show_default=True,
+            help='The intensity of momentum. Ignored if the optimiser is not \'sgd\'')
+    @click.option('--sgd-dampening', type=float, default=0, show_default=True,
+            help='The intensity of dampening. Ignored if the optimiser is not \'sgd\'')
+    @click.option('--sgd-nesterov', is_flag=True,
+            help='Enables Nesterov Accelerated Gradient. Ignored if the optimiser is not \'adam\'')
     @functools.wraps(func)
     def _parse_train_options(options, epochs, optimiser, learning_rate, weight_decay, adam_betas, adam_epsilon, adam_amsgrad, sgd_momentum, sgd_dampening, sgd_nesterov, *args, **kwargs):
         train_options = dict(options)
@@ -731,7 +743,7 @@ def test_options(test_name):
     def _test_options(func):
         @click.option('--results-path', default=None, type=click.Path(file_okay=True, dir_okay=False),
                       help='The path to the CSV file where the results will be saved. If unspecified '
-                      'it defaults to \'./results/{}/$dataset$ $start_time$.csv\''.format(test_name))
+                      'it defaults to \'./results/{}/$dataset $start_time.csv\''.format(test_name))
         @functools.wraps(func)
         def _parse_test_options(options, results_path, *args, **kwargs):
             dataset = options['dataset']

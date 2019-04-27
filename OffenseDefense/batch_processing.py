@@ -133,8 +133,7 @@ def run_queue_threads(batch_worker, thread_workers, input_queue, data):
         except queue.Empty:
             break
 
-    # Check that we have received all outputs
-    for output in outputs:
-        assert output is not None
+    # We don't check that all outputs are not None because
+    # None is a valid output
 
     return outputs
