@@ -38,8 +38,11 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: In pretrained_model, you are passing the model path, not the weights one
 # TODO: standard and parallel are treated completely differently, and might have different models or attacks
 # TODO: Attack strategy object? Merge batch_attack and batch_processing? In general, simplify parallelization
-# TODO: Find a standard format for placeholder in --help
 # TODO: Instead of doing __call__((get_grad, image)), do __call__(get_grad, image[,label?])
+# TODO: Not all rejectors use [2|inf] from distance_tool_options. Merge distance_tool with counter_attack?
+# TODO: preprocessor and model, from a defense point of view, are the same. The only difference is the arguments.
+# I could theoretically load a foolbox model and use it, no matter what it contains.
+# TODO: BPDA uses predictions, black box and approximation-dataset use labels
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
@@ -286,7 +289,7 @@ def detector_roc(options, score_dataset_path, no_test_warning):
 @main.group()
 def defense():
     """
-    Use defenses against various attack strategies.
+    Uses defenses against various attack strategies.
     """
     pass
 
@@ -294,7 +297,7 @@ def defense():
 @defense.group(name='rejector')
 def rejector_defense():
     """
-    Defend using a "rejector", which is a tool (usually a detector) that rejects adversarial samples.
+    Defends using a "rejector", which is a tool (usually a detector) that rejects adversarial samples.
     """
     pass
 
@@ -311,6 +314,12 @@ def rejector_defense():
 @parsing.detector_options
 @parsing.rejector_options
 def shallow_rejector(options):
+    """
+    Simply evaluates the effectiveness of the rejector defense, without additional
+    attack strategies.
+    
+    Adversarial samples are generated to fool the undefended model.
+    """
     attack_name = options['attack_name']
     attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
@@ -367,6 +376,15 @@ def shallow_rejector(options):
 @parsing.detector_options
 @parsing.rejector_options
 def black_box_rejector(options):
+    """
+    Uses a black box attack to evade the rejector defense.
+
+    Adversarial samples are generated to fool the defended model,
+    which only provides the labels when queried.
+    Note: Models with rejectors also have a special label 'reject',
+    which does not represent a valid misclassification (i.e. the attack
+    does not considered being rejected a success).
+    """
     attack_name = options['attack_name']
     attack_p = options['attack_p']
     attack_parallelization = options['attack_parallelization']
@@ -386,7 +404,7 @@ def black_box_rejector(options):
         foolbox_model, rejector)
 
     # detectors.Undetected() adds the condition that the top label must not be the last
-    # Note: foolbox.Criterion and foolbox.Criterion should give a combined criterion, but
+    # Note: (foolbox.Criterion and foolbox.Criterion) should give a combined criterion, but
     # apparently it doesn't work. The documentation recommends using "&"
 
     criterion = foolbox.criteria.CombinedCriteria(
@@ -426,7 +444,8 @@ def black_box_rejector(options):
 @defense.group(name='model')
 def model_defense():
     """
-    Defend using a custom model.
+    Defends using a custom model, for example a model that
+    has been trained to be more robust.
     """
     pass
 
@@ -440,6 +459,12 @@ def model_defense():
 @parsing.custom_model_options
 @parsing.attack_options(parsing.supported_attacks)
 def shallow_model(options):
+    """
+    Simply evaluates the effectiveness of the custom model, without additional
+    attack strategies.
+    
+    Adversarial samples are generated to fool the standard model.
+    """
     attack_name = options['attack_name']
     attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
@@ -490,9 +515,18 @@ def shallow_model(options):
 @parsing.standard_model_options
 @parsing.test_options('defense/model/substitute')
 @parsing.custom_model_options
-@parsing.attack_options(parsing.differentiable_attacks)
+@parsing.attack_options(parsing.supported_attacks)
 @parsing.substitute_options
 def substitute_model(options):
+    """
+    Uses BPDA with a substitute model to attack the custom model.
+
+    BPDA uses predictions from the defended model and gradients
+    from the substitute model.
+    Note: We could technically attack the custom model directly,
+    since most models support gradient computation, but we are
+    assuming that we do not have access to the gradients. 
+    """
     attack_name = options['attack_name']
     attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
@@ -547,6 +581,16 @@ def substitute_model(options):
 @parsing.custom_model_options
 @parsing.attack_options(parsing.black_box_attacks)
 def black_box_model(options):
+    """
+    Uses a black box attack against the custom model.
+
+    Adversarial samples are generated to fool the custom model,
+    which only provides the labels when queried.
+
+    Note: We could technically use the gradients,
+    since most models support gradient computation, but we are
+    assuming that we do not have access to them. 
+    """
     attack_name = options['attack_name']
     attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
@@ -607,6 +651,12 @@ def preprocessor_defense():
 @parsing.preprocessor_options
 @parsing.attack_options(parsing.supported_attacks)
 def shallow_preprocessor(options):
+    """
+    Simply evaluates the effectiveness of the preprocessor defense, without additional
+    attack strategies.
+    
+    Adversarial samples are generated to fool the undefended model.
+    """
     attack_p = options['attack_p']
     attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
@@ -661,9 +711,15 @@ def shallow_preprocessor(options):
 @parsing.pretrained_model_options
 @parsing.test_options('defense/preprocessor/substitute')
 @parsing.preprocessor_options
-@parsing.attack_options(parsing.differentiable_attacks)
+@parsing.attack_options(parsing.supported_attacks)
 @parsing.substitute_options
 def substitute_preprocessor(options):
+    """
+    Uses BPDA with a substitute model to evade the preprocessor defense.
+
+    BPDA uses predictions from the defended model and gradients
+    from the substitute model.
+    """
     attack_p = options['attack_p']
     attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
@@ -723,6 +779,12 @@ def substitute_preprocessor(options):
 @parsing.preprocessor_options
 @parsing.attack_options(parsing.black_box_attacks)
 def black_box_preprocessor(options):
+    """
+    Uses a black box attack to evade the preprocessor defense.
+
+    Adversarial samples are generated to fool the defended model,
+    which only provides the labels when queried.
+    """
     attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
@@ -780,6 +842,9 @@ def black_box_preprocessor(options):
 def parallelization(options):
     """
     Compares parallelized attacks with standard ones.
+
+    This is a sanity check to verify that attack parallelization does not seriously
+    affect the results.
     """
 
     attack_name = options['attack_name']
@@ -883,6 +948,13 @@ def approximation_dataset(*args, **kwargs):
 @parsing.adversarial_dataset_options
 @parsing.approximation_dataset_options('preprocessor')
 def approximation_dataset_preprocessor(options):
+    """
+    Generates the dataset to train a substitute model for models
+    with preprocessors.
+
+    Saves the labels predicted by the defended model, using the genuine
+    dataset + an adversarial dataset. 
+    """
     adversarial_loader = options['adversarial_loader']
     approximation_dataset_path = options['approximation_dataset_path']
     foolbox_model = options['foolbox_model']
@@ -925,7 +997,6 @@ def approximation_dataset_model(options):
 @parsing.dataset_options('train', 'train')
 @parsing.standard_model_options
 @parsing.pretrained_model_options
-@parsing.attack_options(parsing.supported_attacks)
 @parsing.distance_tool_options
 @parsing.counter_attack_options(False)
 @parsing.detector_options

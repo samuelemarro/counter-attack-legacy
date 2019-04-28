@@ -408,14 +408,14 @@ def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs)
 
 
 def parse_distance_tool(tool_name, options, failure_value):
-    counter_attack = options['counter_attack']
     defense_p = options['defense_p']
-    counter_attack_workers = options['counter_attack_workers']
     foolbox_model = options['foolbox_model']
-    counter_attack_parallelization = options['counter_attack_parallelization']
     torch_model = options['torch_model']
 
     if tool_name == 'counter-attack':
+        counter_attack = options['counter_attack']
+        counter_attack_workers = options['counter_attack_workers']
+        counter_attack_parallelization = options['counter_attack_parallelization']
         if counter_attack_parallelization:
             # Note: We use the Torch worker directly (without any defenses) since the counter-attack is the defense
             # We also use it because some attacks require the gradient.
@@ -680,6 +680,8 @@ def dataset_options(default_dataset, recommended=None):
                 logger.warning('You are using the {} dataset. We recommend using the {} dataset for this command.'.format(
                     dataset_type, recommended))
 
+            logger.info('Using {} {} dataset.'.format(dataset, dataset_type))
+
             train_loader, test_loader = _get_genuine_loaders(
                 dataset, data_folder, batch_size, shuffle, loader_workers, download_dataset, config_path)
 
@@ -818,20 +820,16 @@ def distance_tool_options(func):
 
 def counter_attack_options(required):
     def _counter_attack_options(func):
-        @click.option('--counter-attack-workers', default=None, type=click.IntRange(0, None),
-                      help='The number of attack workers of the counter attack. If unspecified, it defaults to the number of attack workers. 0 disables parallelization.')
+        @click.option('--counter-attack-workers', type=click.IntRange(0, None), default=0, show_default=True,
+                      help='The number of attack workers of the counter attack.')
         @functools.wraps(func)
         def _parse_counter_attack_options(options, counter_attack, counter_attack_workers, *args, **kwargs):
-            attack_workers = options['attack_workers']
             defense_p = options['defense_p']
             foolbox_model = options['foolbox_model']
             max_model_batch_size = options['max_model_batch_size']
 
             if counter_attack in parallelizable_attacks:
                 logger.debug('Counter attack supports parallelization.')
-                if counter_attack_workers is None:
-                    counter_attack_workers = attack_workers
-                    logger.debug('--counter-attack-workers not set, defaulting to --attack-workers ({}).'.format(attack_workers))
             else:
                 logger.debug('Counter attack does not support parallelization.')
 
@@ -991,7 +989,7 @@ def preprocessor_options(func):
 
 def adversarial_dataset_options(func):
     @click.argument('adversarial_dataset_path', type=click.Path(exists=True, file_okay=True, dir_okay=True))
-    @click.option('--max-adversarial_batches', type=click.IntRange(1, None), default=None,
+    @click.option('--max-adversarial-batches', type=click.IntRange(1, None), default=None,
                   help='The maximum number of batches. If unspecified, no batch limiting is applied.')
     @functools.wraps(func)
     def _parse_adversarial_dataset_options(options, adversarial_dataset_path, max_adversarial_batches, *args, **kwargs):

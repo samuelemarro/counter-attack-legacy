@@ -44,7 +44,9 @@ def save_zip(object, path, protocol=0):
     """
     Saves a compressed object to disk
     """
+    # Create the folder, if necessary
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
+    
     file = gzip.GzipFile(path, 'wb')
     pickled = pickle.dumps(object, protocol)
     file.write(pickled)
