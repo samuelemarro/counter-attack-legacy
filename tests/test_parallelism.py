@@ -1,2 +1,0 @@
-import pytest
-import OffenseDefense.batch_attack as batch_attack
