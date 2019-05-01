@@ -142,44 +142,6 @@ def accuracy_distortion_curve(base_accuracy, base_attack_success_rate, distances
     return x, y
 
 
-def lp_distance(x, y, p, batch, broadcast=False):
-    """
-    Computes the L_p distance between two points. Works with matrices
-    of rank above 2 and supports batches, unlike numpy.linanlg.norm
-    """
-    if p < 0:
-        raise ValueError('p must be positive or zero')
-
-    if len(x) != len(y) and batch and not broadcast:
-        raise ValueError(
-            '\'x\' and \'y\' must have the same length if batch=True and broadcast=False.')
-
-    # If x or y are empty, we return an empty array
-    empty_x = hasattr(x, '__len__') and len(x) == 0
-    empty_y = hasattr(y, '__len__') and len(y) == 0
-    if batch and (empty_x or empty_y):
-        return np.array([], dtype=np.float)
-
-    if broadcast:
-        x, y = np.broadcast_arrays(x, y)
-
-    def single_image(diff):
-        # L_infinity: Maximum difference
-        if np.isinf(p):
-            return np.max(np.abs(diff))
-        # L_0: Count of different values
-        elif p == 0:
-            return len(np.nonzero(np.reshape(diff, -1))[0])
-        # L_p: p-root of the sum of diff^p
-        else:
-            return np.power(np.sum(np.power(np.abs(diff), p)), 1 / p)
-
-    if batch:
-        return np.array([single_image(_x - _y) for _x, _y in zip(x, y)])
-    else:
-        return single_image(x - y)
-
-
 def filter_lists(condition, *lists):
     tuple_size = len(lists)
     length = len(lists[0])

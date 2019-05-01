@@ -46,7 +46,7 @@ def accuracy_test(foolbox_model: foolbox.models.Model,
 def attack_test(foolbox_model: foolbox.models.Model,
                 loader: loaders.Loader,
                 attack: foolbox.attacks.Attack,
-                p: int,
+                distance_measure : distance_tools.DistanceMeasure,
                 num_workers: int = 50,
                 save_adversarials: bool = False,
                 name: str = 'Attack Test') -> Tuple[float, np.ndarray]:
@@ -79,8 +79,8 @@ def attack_test(foolbox_model: foolbox.models.Model,
 
         # Update the distances and/or the adversarials (if there are successful adversarials)
         if len(successful_adversarials) > 0:
-            distances += list(utils.lp_distance(
-                successful_adversarials, successful_images, p, True))
+            distances += list(distance_measure.compute(
+                successful_adversarials, successful_images, True, foolbox_model.bounds()))
 
             if save_adversarials:
                 adversarials += list(successful_adversarials)
@@ -118,7 +118,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
 def shallow_rejector_test(standard_model: foolbox.models.Model,
                           loader,
                           attack,
-                          p,
+                          distance_measure : distance_tools.DistanceMeasure,
                           rejector,
                           num_workers: int = 50,
                           name: str = 'Shallow Rejector Attack'):
@@ -155,7 +155,7 @@ def shallow_rejector_test(standard_model: foolbox.models.Model,
         successful_attack_count += len(adversarials)
 
         # Fifth step: Compute the distances
-        batch_distances = utils.lp_distance(images, adversarials, p, True)
+        batch_distances = distance_measure.compute(images, adversarials, True, standard_model.bounds())
         distances += list(batch_distances)
 
         accuracy = correct_count / samples_count
@@ -173,10 +173,13 @@ def shallow_rejector_test(standard_model: foolbox.models.Model,
 def shallow_defense_test(standard_model: foolbox.models.Model,
                        loader,
                        attack,
-                       p,
+                       distance_measure : distance_tools.DistanceMeasure,
                        defended_model: foolbox.models.Model,
                        num_workers: int = 50,
                        name: str = 'Shallow Model Attack'):
+
+    assert standard_model.bounds() == defended_model.bounds()
+
     samples_count = 0
     correct_count = 0
     successful_attack_count = 0
@@ -210,7 +213,7 @@ def shallow_defense_test(standard_model: foolbox.models.Model,
         successful_attack_count += len(adversarials)
 
         # Fourth step: Compute the distances
-        batch_distances = utils.lp_distance(images, adversarials, p, True)
+        batch_distances = distance_measure.compute(images, adversarials, True, defended_model.bounds())
         distances += list(batch_distances)
 
         accuracy = correct_count / samples_count
@@ -226,11 +229,11 @@ def shallow_defense_test(standard_model: foolbox.models.Model,
 
 
 def roc_curve_test(foolbox_model: foolbox.models.Model,
-                           genuine_loader: loaders.Loader,
-                           adversarial_loader: loaders.Loader,
-                           detector: detectors.Detector,
-                           save_samples: bool,
-                           name: str = 'Detection Test'):
+                    genuine_loader: loaders.Loader,
+                    adversarial_loader: loaders.Loader,
+                    detector: detectors.Detector,
+                    save_samples: bool,
+                    name: str = 'Detection Test'):
     """
         Computes the ROC of a shallow detector.
     """
@@ -269,7 +272,7 @@ def roc_curve_test(foolbox_model: foolbox.models.Model,
 def parallelization_test(foolbox_model: foolbox.models.Model,
                          loader: loaders.Loader,
                          attack: foolbox.attacks.Attack,
-                         p: int,
+                         distance_measure: distance_tools.DistanceMeasure,
                          num_workers: int = 50,
                          name: str = 'Parallelization Test'):
 
@@ -294,8 +297,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         parallel_attack_count += len(parallel_adversarials)
 
-        parallel_distances += list(utils.lp_distance(
-            parallel_adversarials, parallel_images, p, True))
+        parallel_distances += list(distance_measure.compute(parallel_adversarials, parallel_images, True, foolbox_model.bounds()))
 
         # Run the standard attack
         standard_adversarials, standard_images, _ = batch_attack.get_adversarials(
@@ -303,8 +305,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         standard_attack_count += len(standard_adversarials)
 
-        standard_distances += list(utils.lp_distance(
-            standard_adversarials, standard_images, p, True))
+        standard_distances += list(distance_measure.compute(standard_adversarials, standard_images, True, foolbox_model.bounds()))
 
         # Compute the statistics, treating failures as samples with distance=Infinity
         standard_failure_count = correct_count - standard_attack_count

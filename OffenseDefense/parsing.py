@@ -378,8 +378,9 @@ def _get_num_classes(dataset):
         raise ValueError('Dataset not supported')
 
 
-def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs):
+def parse_attack(attack_name, distance_measure, foolbox_model, criterion, **attack_call_kwargs):
     attack_constructor = None
+    p = distance_measure.p
 
     if attack_name == 'deepfool':
         if p == 2:
@@ -395,15 +396,9 @@ def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs)
     else:
         raise ValueError('Attack not supported.')
 
-    if np.isposinf(p):
-        # Don't average the L-inf distance
-        distance = distance_tools.LpDistance(p, True, False)
-        logger.info('Distance measure: L-inf Bound-normalized distance')
-    else:
-        distance = distance_tools.LpDistance(p, True, True)
-        logger.info('Distance measure: Mean L-{} Bound-normalized distance'.format(p))
+    foolbox_distance = distance_tools.FoolboxDistance(distance_measure)
 
-    attack = attack_constructor(foolbox_model, criterion, distance)
+    attack = attack_constructor(foolbox_model, criterion, foolbox_distance)
 
     if len(attack_call_kwargs) > 0:
         logger.debug('Added attack call keyword arguments: {}'.format(
@@ -414,7 +409,7 @@ def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs)
 
 
 def parse_distance_tool(tool_name, options, failure_value):
-    defense_p = options['defense_p']
+    defense_distance_measure = options['defense_distance_measure']
     foolbox_model = options['foolbox_model']
 
     if tool_name == 'counter-attack':
@@ -424,7 +419,7 @@ def parse_distance_tool(tool_name, options, failure_value):
         # We also use it because some attacks require the gradient.
 
         distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                            defense_p, failure_value, counter_attack_workers)
+                                                            defense_distance_measure, failure_value, counter_attack_workers)
     else:
         raise ValueError('Distance tool not supported.')
 
@@ -778,6 +773,10 @@ def attack_options(attacks, mandatory_parallelization=False):
         def _parse_attack_options(options, attack, attack_p, attack_workers, *args, **kwargs):
             attack_p = float(attack_p)
 
+            mean = not np.isposinf(attack_p) # Don't average L-inf
+            attack_distance_measure = distance_tools.LpDistanceMeasure(attack_p, mean)
+            logger.info('Attack distance measure: {}'.format(attack_distance_measure))
+
             if attack in parallelizable_attacks:
                 logger.debug('Attack supports parallelization.')
             else:
@@ -792,7 +791,7 @@ def attack_options(attacks, mandatory_parallelization=False):
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
             attack_options['attack_name'] = attack
-            attack_options['attack_p'] = attack_p
+            attack_options['attack_distance_measure'] = attack_distance_measure
             attack_options['attack_workers'] = attack_workers
 
             return func(attack_options, *args, **kwargs)
@@ -805,10 +804,13 @@ def distance_tool_options(func):
     @functools.wraps(func)
     def _parse_distance_tool_options(options, defense_p, *args, **kwargs):
         defense_p = float(defense_p)
+        mean = not np.isposinf(defense_p)
+        defense_distance_measure = distance_tools.LpDistanceMeasure(defense_p, mean)
+        logger.info('Defense distance measure: {}'.format(defense_distance_measure))
 
         distance_tool_options = dict(options)
 
-        distance_tool_options['defense_p'] = defense_p
+        distance_tool_options['defense_distance_measure'] = defense_distance_measure
 
         return func(distance_tool_options, *args, **kwargs)
     return _parse_distance_tool_options
@@ -820,7 +822,7 @@ def counter_attack_options(required):
                       help='The number of attack workers of the counter attack.')
         @functools.wraps(func)
         def _parse_counter_attack_options(options, counter_attack, counter_attack_workers, *args, **kwargs):
-            defense_p = options['defense_p']
+            defense_distance_measure = options['defense_distance_measure']
             foolbox_model = options['foolbox_model']
             max_model_batch_size = options['max_model_batch_size']
 
@@ -843,7 +845,7 @@ def counter_attack_options(required):
                     'counter attack workers, or disable model batch limiting.')
 
             counter_attack = parse_attack(
-                counter_attack, defense_p, foolbox_model, foolbox.criteria.Misclassification())
+                counter_attack, defense_distance_measure, foolbox_model, foolbox.criteria.Misclassification())
 
             counter_attack_options = dict(options)
 

@@ -38,13 +38,8 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Not all rejectors use [2|inf] from distance_tool_options. Merge distance_tool with counter_attack?
 # TODO: preprocessor and model, from a defense point of view, are the same. The only difference is the arguments.
 # I could theoretically load a foolbox model and use it, no matter what it contains.
-# TODO: MSE(x) is (L2(x)^2)/n, but foolbox uses MSE when it talks about L2.
-# TODO: Foolbox uses normalized distances in the bounds (d / (max_ - min_)) which are often averaged (d / n, L-inf is an exception)
-# Should I use the same approach? I don't like averaging, as it has nothing to do with the norm, but it is useful for comparing
-# different image sizes. I think I will have to add both normalization and averaging.
-# TODO: RandomDirectionAttack passes arbitrary distance and threshold
-# TODO: Can I make WrappedLpDistance less hacky?
-# TODO: Finish bound normalization in LpDistance
+# TODO: Threshold support for RandomDirectionAttack?
+# TODO: In parallelization, attack workers should be an argument
 
 
 # IMPORTANT:
@@ -62,6 +57,8 @@ logger = logging.getLogger('OffenseDefense')
 # because you're running the attack on the train set
 
 # Note: For ImageNet, we evaluate on the validation set
+
+# Note: We use L_p bound-normalized distance, which is averaged if p is not inf
 
 @click.group()
 def main(*args):
@@ -98,7 +95,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
         Adjusted Median Distance: The median L_p distance of the adversarial samples from their original samples, treating failed attacks as samples with distance Infinity.
     """
 
-    attack_p = options['attack_p']
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -110,7 +107,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
     criterion = foolbox.criteria.Misclassification()
 
     attack = parsing.parse_attack(
-        attack_name, attack_p, foolbox_model, criterion)
+        attack_name, attack_distance_measure, foolbox_model, criterion)
 
     save_adversarials = adversarial_dataset_path is not None
 
@@ -119,7 +116,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
                        'to train or calibrate an adversarial detector. You can disable this warning by passing '
                        '\'--no-test-warning\'.')
 
-    samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, attack_p,
+    samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, attack_distance_measure,
                                                                                                                                   attack_workers, save_adversarials=save_adversarials)
 
     accuracy = correct_count / samples_count
@@ -251,10 +248,10 @@ def detector_roc(options, score_dataset_path, no_test_warning):
     header = ['Genuine Scores', 'Adversarial Scores',
               'Thresholds', 'True Positive Rates', 'False Positive Rates']
 
-    true_positive_rates = ['{:2.2}%'.format(
-        true_positive_rate) for true_positive_rate in true_positive_rates]
-    false_positive_rates = ['{:2.2}%'.format(
-        false_positive_rate) for false_positive_rate in false_positive_rates]
+    true_positive_rates = ['{:2.2f}%'.format(
+        true_positive_rate * 100.0) for true_positive_rate in true_positive_rates]
+    false_positive_rates = ['{:2.2f}%'.format(
+        false_positive_rate * 100.0) for false_positive_rate in false_positive_rates]
 
     columns = [genuine_scores, adversarial_scores,
                thresholds, true_positive_rates, false_positive_rates]
@@ -316,12 +313,12 @@ def shallow_rejector(options):
     
     Adversarial samples are generated to fool the undefended model.
     """
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
-    attack_p = options['attack_p']
     rejector = options['rejector']
     results_path = options['results_path']
 
@@ -329,10 +326,10 @@ def shallow_rejector(options):
 
     # The attack will be against the undefended model
     attack = parsing.parse_attack(
-        attack_name, attack_p, foolbox_model, criterion)
+        attack_name, attack_distance_measure, foolbox_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_rejector_test(
-        foolbox_model, loader, attack, attack_p, rejector, attack_workers)
+        foolbox_model, loader, attack, attack_distance_measure, rejector, attack_workers)
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -374,8 +371,8 @@ def black_box_rejector(options):
     which does not represent a valid misclassification (i.e. the attack
     does not considered being rejected a success).
     """
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
-    attack_p = options['attack_p']
     attack_workers = options['attack_workers']
     command = options['command']
     foolbox_model = options['foolbox_model']
@@ -400,10 +397,10 @@ def black_box_rejector(options):
 
     # The attack will be against the defended model
     attack = parsing.parse_attack(
-        attack_name, attack_p, defended_model, criterion)
+        attack_name, attack_distance_measure, defended_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        defended_model, loader, attack, attack_p, attack_workers, name='Black-Box Rejector Attack')
+        defended_model, loader, attack, attack_distance_measure, attack_workers, name='Black-Box Rejector Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -448,23 +445,23 @@ def shallow_model(options):
     
     Adversarial samples are generated to fool the standard model.
     """
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
     custom_foolbox_model = options['custom_foolbox_model']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
-    attack_p = options['attack_p']
     results_path = options['results_path']
 
     criterion = foolbox.criteria.Misclassification()
 
     # The attack will be against the undefended model
     attack = parsing.parse_attack(
-        attack_name, attack_p, foolbox_model, criterion)
+        attack_name, attack_distance_measure, foolbox_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(
-        foolbox_model, loader, attack, attack_p, custom_foolbox_model, attack_workers, name='Shallow Model Attack')
+        foolbox_model, loader, attack, attack_distance_measure, custom_foolbox_model, attack_workers, name='Shallow Model Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -503,12 +500,12 @@ def substitute_model(options):
     since most models support gradient computation, but we are
     assuming that we do not have access to the gradients. 
     """
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
     custom_foolbox_model = options['custom_foolbox_model']
     loader = options['loader']
-    attack_p = options['attack_p']
     results_path = options['results_path']
     substitute_foolbox_model = options['substitute_foolbox_model']
 
@@ -518,9 +515,9 @@ def substitute_model(options):
 
     # The attack will be against the substitute model with estimated gradients
     attack = parsing.parse_attack(
-        attack_name, attack_p, composite_model, criterion)
+        attack_name, attack_distance_measure, composite_model, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_p,
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_distance_measure,
                                                                                                attack_workers, name='Substitute Model Attack')
 
     accuracy = correct_count / samples_count
@@ -559,22 +556,22 @@ def black_box_model(options):
     since most models support gradient computation, but we are
     assuming that we do not have access to them. 
     """
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
     custom_foolbox_model = options['custom_foolbox_model']
     loader = options['loader']
-    attack_p = options['attack_p']
     results_path = options['results_path']
 
     criterion = foolbox.criteria.Misclassification()
 
     # The attack will be against the defended (custom) model
     attack = parsing.parse_attack(
-        attack_name, attack_p, custom_foolbox_model, criterion)
+        attack_name, attack_distance_measure, custom_foolbox_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        custom_foolbox_model, loader, attack, attack_p, attack_workers, name='Black-Box Model Attack')
+        custom_foolbox_model, loader, attack, attack_distance_measure, attack_workers, name='Black-Box Model Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -618,7 +615,7 @@ def shallow_preprocessor(options):
     
     Adversarial samples are generated to fool the undefended model.
     """
-    attack_p = options['attack_p']
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -631,12 +628,12 @@ def shallow_preprocessor(options):
 
     # The attack will be against the undefended model
     attack = parsing.parse_attack(
-        attack_name, attack_p, foolbox_model, criterion)
+        attack_name, attack_distance_measure, foolbox_model, criterion)
 
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
-    samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(foolbox_model, loader, attack, attack_p,
+    samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(foolbox_model, loader, attack, attack_distance_measure,
                                                                                                 defended_model, attack_workers,
                                                                                                 name='Shallow Preprocessor Attack')
 
@@ -674,7 +671,7 @@ def substitute_preprocessor(options):
     BPDA uses predictions from the defended model and gradients
     from the substitute model.
     """
-    attack_p = options['attack_p']
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -693,9 +690,9 @@ def substitute_preprocessor(options):
 
     # The attack will be against the defended model with estimated gradients
     attack = parsing.parse_attack(
-        attack_name, attack_p, composite_model, criterion)
+        attack_name, attack_distance_measure, composite_model, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_p,
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_distance_measure,
                                                                                                attack_workers, name='Substitute Preprocessor Attack')
 
     accuracy = correct_count / samples_count
@@ -731,13 +728,13 @@ def black_box_preprocessor(options):
     Adversarial samples are generated to fool the defended model,
     which only provides the labels when queried.
     """
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
-    attack_p = options['attack_p']
     preprocessor = options['preprocessor']
 
     defended_model = defenses.PreprocessorDefenseModel(
@@ -747,9 +744,9 @@ def black_box_preprocessor(options):
 
     # The attack will be against the defended model
     attack = parsing.parse_attack(
-        attack_name, attack_p, defended_model, criterion)
+        attack_name, attack_distance_measure, defended_model, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(defended_model, loader, attack, attack_p,
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(defended_model, loader, attack, attack_distance_measure,
                                                                                                attack_workers, name='Black-Box Preprocessor Attack')
 
     accuracy = correct_count / samples_count
@@ -786,21 +783,21 @@ def parallelization(options):
     affect the results.
     """
 
+    attack_distance_measure = options['attack_distance_measure']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
     foolbox_model = options['foolbox_model']
-    attack_p = options['attack_p']
     results_path = options['results_path']
     loader = options['loader']
 
     criterion = foolbox.criteria.Misclassification()
 
     attack = parsing.parse_attack(
-        attack_name, attack_p, foolbox_model, criterion)
+        attack_name, attack_distance_measure, foolbox_model, criterion)
 
     samples_count, correct_count, standard_attack_count, parallel_attack_count, standard_distances, parallel_distances = tests.parallelization_test(
-        foolbox_model, loader, attack, attack_p, attack_workers)
+        foolbox_model, loader, attack, attack_distance_measure, attack_workers)
 
     standard_failure_count = correct_count - standard_attack_count
     parallel_failure_count = correct_count - parallel_attack_count

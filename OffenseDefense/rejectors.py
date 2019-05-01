@@ -34,10 +34,11 @@ class DetectorRejector(Rejector):
 #TODO: Check the cache
 
 class CacheRejector(Rejector):
-    def __init__(self, distance_tool, threshold, p, cache_size):
+    def __init__(self, distance_tool, threshold, distance_measure, bounds, cache_size):
         self.distance_tool = distance_tool
         self.threshold = threshold
-        self.p = p
+        self.distance_measure = distance_measure
+        self.bounds = bounds
         self.cache_size = cache_size
 
         self.cache = []
@@ -49,8 +50,7 @@ class CacheRejector(Rejector):
         plt.show()"""
 
         for cache_image, cache_distance in self.cache:
-            image_distance = utils.lp_distance(
-                image, cache_image, self.p, False)
+            image_distance = self.distance_measure.compute(image, cache_image, False, self.bounds)
 
             """plt.title(image_distance)
             plt.imshow(np.transpose(cache_image, [1, 2, 0]))
@@ -62,10 +62,7 @@ class CacheRejector(Rejector):
             if image_distance < self.threshold - cache_distance and cache_distance < self.threshold:
                 logger.debug('Auto-reject')
                 return False
-            # If the cache is valid and the image is close enough to the cache, accept
-            elif image_distance < cache_distance - self.threshold and cache_distance > self.threshold:
-                logger.debug('Auto-accept')
-                return True
+            # We cannot be sure that a valid cache is actually valid
 
         # If no cache image was able to automatically reject or accept, evaluate normally
 
@@ -88,17 +85,13 @@ class CacheRejector(Rejector):
 
         for i, image in enumerate(images):
             for cache_image, cache_distance in self.cache:
-                image_distance = utils.lp_distance(
-                    image, cache_image, self.p, False)
+                image_distance = self.distance_measure.compute(image, cache_image, False, self.bounds)
 
                 # If the cache is not valid and the image is close enough to the cache, reject
                 if image_distance < self.threshold - cache_distance and cache_distance < self.threshold:
                     auto_reject_indices.append(i)
                     break
-                # If the cache is valid and the image is close enough to the cache, accept
-                elif image_distance < cache_distance - self.threshold and cache_distance > self.threshold:
-                    auto_accept_indices.append(i)
-                    break
+                # We cannot be sure that a valid cache is actually valid
 
         # Initialize the responses to False
         responses = np.zeros([len(images)], dtype=np.bool)
