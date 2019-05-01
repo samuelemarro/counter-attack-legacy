@@ -2,7 +2,7 @@ import logging
 
 import foolbox
 import numpy as np
-from . import batch_attack, batch_processing, utils
+from . import batch_attack, utils
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +30,12 @@ class AdversarialDistance(DistanceTool):
                  attack: foolbox.attacks.Attack,
                  p: np.float,
                  failure_value: np.float,
-                 batch_worker: batch_processing.BatchWorker = None,
                  num_workers: int = 50,
                  name: str = None):
         self.foolbox_model = foolbox_model
         self.attack = attack
         self.p = p
         self.failure_value = failure_value
-        self.batch_worker = batch_worker
         self.num_workers = num_workers
 
         if name is None:
@@ -73,7 +71,6 @@ class AdversarialDistance(DistanceTool):
                                                            labels,
                                                            self.attack,
                                                            False,
-                                                           batch_worker=self.batch_worker,
                                                            num_workers=self.num_workers)
 
         assert len(adversarials) == len(images)
@@ -126,13 +123,28 @@ class LpDistance(foolbox.distances.Distance):
     arguments (in addition to p) and return it.
     """
     class WrappedLpDistance(foolbox.distances.Distance):
-        def __init__(self, p, reference=None, other=None, bounds=None, value=None):
+        def __init__(self, p, normalize_in_bounds, mean, reference=None, other=None, bounds=None, value=None):
+
+            if np.isposinf(p) and mean:
+                logger.warning('You are averaging the L-inf distance. Is this behaviour expected?')
+
             self.p = p
+            self.normalize_in_bounds = normalize_in_bounds
+            self.mean = mean
             super().__init__(reference, other, bounds, value)
 
         def _calculate(self):
+            assert self.other.shape == self.reference.shape
+
+            # TODO: Bound normalization
+
             value = utils.lp_distance(
                 self.other, self.reference, self.p, False)
+
+            if self.mean:
+                n = self.reference.size
+                value = value / n
+
             gradient = None
             return value, gradient
 
@@ -141,17 +153,31 @@ class LpDistance(foolbox.distances.Distance):
             raise NotImplementedError
 
         def name(self):
-            return 'L{} Distance'.format(self.p)
+            _name = ''
 
-    def __init__(self, p):
+            if self.mean:
+                _name += 'Mean '
+
+            _name += 'L{} '.format(self.p)
+
+            if self.normalize_in_bounds:
+                _name += 'Bound-normalized '
+
+            _name += 'distance'
+
+            return _name
+
+    def __init__(self, p, normalize_in_bounds, mean):
         self.p = p
+        self.normalize_in_bounds = normalize_in_bounds
+        self.mean = mean
 
     def __call__(self,
                  reference=None,
                  other=None,
                  bounds=None,
                  value=None):
-        return LpDistance.WrappedLpDistance(self.p, reference, other, bounds, value)
+        return LpDistance.WrappedLpDistance(self.p, self.normalize_in_bounds, self.mean, reference, other, bounds, value)
 
     def _calculate(self):
         raise NotImplementedError()

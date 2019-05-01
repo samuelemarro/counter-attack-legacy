@@ -395,7 +395,13 @@ def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs)
     else:
         raise ValueError('Attack not supported.')
 
-    distance = distance_tools.LpDistance(p)
+    if np.isposinf(p):
+        # Don't average the L-inf distance
+        distance = distance_tools.LpDistance(p, True, False)
+        logger.info('Distance measure: L-inf Bound-normalized distance')
+    else:
+        distance = distance_tools.LpDistance(p, True, True)
+        logger.info('Distance measure: Mean L-{} Bound-normalized distance'.format(p))
 
     attack = attack_constructor(foolbox_model, criterion, distance)
 
@@ -410,22 +416,15 @@ def parse_attack(attack_name, p, foolbox_model, criterion, **attack_call_kwargs)
 def parse_distance_tool(tool_name, options, failure_value):
     defense_p = options['defense_p']
     foolbox_model = options['foolbox_model']
-    torch_model = options['torch_model']
 
     if tool_name == 'counter-attack':
         counter_attack = options['counter_attack']
         counter_attack_workers = options['counter_attack_workers']
-        counter_attack_parallelization = options['counter_attack_parallelization']
-        if counter_attack_parallelization:
-            # Note: We use the Torch worker directly (without any defenses) since the counter-attack is the defense
-            # We also use it because some attacks require the gradient.
+        # Note: We use the Torch Foolbox model directly (without any defenses) because the counter-attack is the defense
+        # We also use it because some attacks require the gradient.
 
-            batch_worker = batch_attack.TorchModelWorker(torch_model)
-            distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                               defense_p, failure_value, batch_worker, counter_attack_workers)
-        else:
-            distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                               defense_p, failure_value)
+        distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
+                                                            defense_p, failure_value, counter_attack_workers)
     else:
         raise ValueError('Distance tool not supported.')
 
@@ -787,16 +786,13 @@ def attack_options(attacks, mandatory_parallelization=False):
                 if attack_workers > 0:
                     raise click.BadOptionUsage('--attack-workers', 'The chosen attack \'{}\' does not support parallelization.'.format(attack))
 
-            attack_parallelization = attack_workers > 0
-
-            logger.info('Attack parallelization: {} ({} workers).'.format(attack_parallelization, attack_workers))
+            logger.info('Attack workers: {}.'.format(attack_workers))
 
             attack_options = dict(options)
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
             attack_options['attack_name'] = attack
             attack_options['attack_p'] = attack_p
-            attack_options['attack_parallelization'] = attack_parallelization
             attack_options['attack_workers'] = attack_workers
 
             return func(attack_options, *args, **kwargs)
@@ -838,8 +834,7 @@ def counter_attack_options(required):
 
                 counter_attack_workers = 0
 
-            counter_attack_parallelization = counter_attack_workers > 0
-            logger.info('Counter attack parallelization: {} ({} workers).'.format(counter_attack_parallelization, counter_attack_workers))
+            logger.info('Counter attack workers: {}.'.format(counter_attack_workers))
 
             if max_model_batch_size > 0 and counter_attack_workers > max_model_batch_size:
                 raise click.BadOptionUsage('--counter-attack-workers',
@@ -853,7 +848,6 @@ def counter_attack_options(required):
             counter_attack_options = dict(options)
 
             counter_attack_options['counter_attack'] = counter_attack
-            counter_attack_options['counter_attack_parallelization'] = counter_attack_parallelization
             counter_attack_options['counter_attack_workers'] = counter_attack_workers
 
             return func(counter_attack_options, *args, **kwargs)

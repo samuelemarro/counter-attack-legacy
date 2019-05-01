@@ -87,7 +87,12 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
             attack will use NumPy's default random module.
         """
 
-        super().__init__(model, criterion, distance=distance_tools.LpDistance(p), threshold=None)
+        if np.isposinf(p):
+            distance = distance_tools.LpDistance(p, True, False)
+        else:
+            distance = distance_tools.LpDistance(p, True, True)
+        
+        super().__init__(model, criterion, distance=distance, threshold=None)
         self.p = p
         self.directions = directions
         self.search_steps = search_steps

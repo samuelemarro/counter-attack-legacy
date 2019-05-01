@@ -154,7 +154,7 @@ def lp_distance(x, y, p, batch, broadcast=False):
         raise ValueError(
             '\'x\' and \'y\' must have the same length if batch=True and broadcast=False.')
 
-    # If x or y are empty, we retun an empty array
+    # If x or y are empty, we return an empty array
     empty_x = hasattr(x, '__len__') and len(x) == 0
     empty_y = hasattr(y, '__len__') and len(y) == 0
     if batch and (empty_x or empty_y):

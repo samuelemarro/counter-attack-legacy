@@ -1,5 +1,6 @@
 Adversarial-Robustness-Toolbox>=0.4.0
 click>=7.0
+dill>=0.2.9
 foolbox>=1.5.0
 matplotlib>=2.0.2
 numpy>=1.14.3

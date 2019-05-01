@@ -28,21 +28,24 @@ logger = logging.getLogger('OffenseDefense')
 # TODO: Allow for optional model weights?
 # TODO: Check that the pretrained model does not contain normalisation inside?
 # TODO: British vs American spelling
-# TODO: Check composite workers
 # TODO: Download the cifar100 weights for densenet-bc-100-12 (when available)
 # TODO: Upload both of them and update the links in config.ini
-# TODO: counter_attack_workers doesn't do anything!
 # TODO: Sanity check: Difference between the original model and its trained approximator
 # TODO: Verify that the transfer is successful
 # TODO: Complete the substitutes
 # TODO: In pretrained_model, you are passing the model path, not the weights one
 # TODO: standard and parallel are treated completely differently, and might have different models or attacks
-# TODO: Attack strategy object? Merge batch_attack and batch_processing? In general, simplify parallelization
-# TODO: Instead of doing __call__((get_grad, image)), do __call__(get_grad, image[,label?])
 # TODO: Not all rejectors use [2|inf] from distance_tool_options. Merge distance_tool with counter_attack?
 # TODO: preprocessor and model, from a defense point of view, are the same. The only difference is the arguments.
 # I could theoretically load a foolbox model and use it, no matter what it contains.
-# TODO: BPDA uses predictions, black box and approximation-dataset use labels
+# TODO: MSE(x) is (L2(x)^2)/n, but foolbox uses MSE when it talks about L2.
+# TODO: Foolbox uses normalized distances in the bounds (d / (max_ - min_)) which are often averaged (d / n, L-inf is an exception)
+# Should I use the same approach? I don't like averaging, as it has nothing to do with the norm, but it is useful for comparing
+# different image sizes. I think I will have to add both normalization and averaging.
+# TODO: RandomDirectionAttack passes arbitrary distance and threshold
+# TODO: Can I make WrappedLpDistance less hacky?
+# TODO: Finish bound normalization in LpDistance
+
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model
@@ -96,7 +99,6 @@ def attack(options, adversarial_dataset_path, no_test_warning):
     """
 
     attack_p = options['attack_p']
-    attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -104,14 +106,8 @@ def attack(options, adversarial_dataset_path, no_test_warning):
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
-    torch_model = options['torch_model']
 
     criterion = foolbox.criteria.Misclassification()
-
-    if attack_parallelization:
-        batch_worker = batch_attack.TorchModelWorker(torch_model)
-    else:
-        batch_worker = None
 
     attack = parsing.parse_attack(
         attack_name, attack_p, foolbox_model, criterion)
@@ -124,7 +120,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
                        '\'--no-test-warning\'.')
 
     samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, attack_p,
-                                                                                                                                  batch_worker, attack_workers, save_adversarials=save_adversarials)
+                                                                                                                                  attack_workers, save_adversarials=save_adversarials)
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -321,7 +317,6 @@ def shallow_rejector(options):
     Adversarial samples are generated to fool the undefended model.
     """
     attack_name = options['attack_name']
-    attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
     command = options['command']
     foolbox_model = options['foolbox_model']
@@ -329,12 +324,6 @@ def shallow_rejector(options):
     attack_p = options['attack_p']
     rejector = options['rejector']
     results_path = options['results_path']
-    torch_model = options['torch_model']
-
-    if attack_parallelization:
-        batch_worker = batch_attack.TorchModelWorker(torch_model)
-    else:
-        batch_worker = None
 
     criterion = foolbox.criteria.Misclassification()
 
@@ -343,7 +332,7 @@ def shallow_rejector(options):
         attack_name, attack_p, foolbox_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_rejector_test(
-        foolbox_model, loader, attack, attack_p, rejector, batch_worker, attack_workers)
+        foolbox_model, loader, attack, attack_p, rejector, attack_workers)
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -387,7 +376,6 @@ def black_box_rejector(options):
     """
     attack_name = options['attack_name']
     attack_p = options['attack_p']
-    attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
     command = options['command']
     foolbox_model = options['foolbox_model']
@@ -410,17 +398,12 @@ def black_box_rejector(options):
     criterion = foolbox.criteria.CombinedCriteria(
         foolbox.criteria.Misclassification(), rejectors.Unrejected())
 
-    if attack_parallelization:
-        defended_batch_worker = batch_attack.FoolboxModelWorker(defended_model)
-    else:
-        defended_batch_worker = None
-
     # The attack will be against the defended model
     attack = parsing.parse_attack(
         attack_name, attack_p, defended_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        defended_model, loader, attack, attack_p, defended_batch_worker, attack_workers, name='Black-Box Rejector Attack')
+        defended_model, loader, attack, attack_p, attack_workers, name='Black-Box Rejector Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -466,7 +449,6 @@ def shallow_model(options):
     Adversarial samples are generated to fool the standard model.
     """
     attack_name = options['attack_name']
-    attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
     command = options['command']
     custom_foolbox_model = options['custom_foolbox_model']
@@ -474,12 +456,6 @@ def shallow_model(options):
     loader = options['loader']
     attack_p = options['attack_p']
     results_path = options['results_path']
-    torch_model = options['torch_model']
-
-    if attack_parallelization:
-        standard_batch_worker = batch_attack.TorchModelWorker(torch_model)
-    else:
-        standard_batch_worker = None
 
     criterion = foolbox.criteria.Misclassification()
 
@@ -487,8 +463,8 @@ def shallow_model(options):
     attack = parsing.parse_attack(
         attack_name, attack_p, foolbox_model, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances = tests.transfer_test(
-        foolbox_model, loader, attack, attack_p, custom_foolbox_model, standard_batch_worker, attack_workers, name='Shallow Model Attack')
+    samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(
+        foolbox_model, loader, attack, attack_p, custom_foolbox_model, attack_workers, name='Shallow Model Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -528,7 +504,6 @@ def substitute_model(options):
     assuming that we do not have access to the gradients. 
     """
     attack_name = options['attack_name']
-    attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
     command = options['command']
     custom_foolbox_model = options['custom_foolbox_model']
@@ -536,14 +511,8 @@ def substitute_model(options):
     attack_p = options['attack_p']
     results_path = options['results_path']
     substitute_foolbox_model = options['substitute_foolbox_model']
-    substitute_torch_model = options['substitute_torch_model']
 
     composite_model = foolbox.models.CompositeModel(custom_foolbox_model, substitute_foolbox_model)
-    
-    if attack_parallelization:
-        composite_batch_worker = batch_attack.CompositeModelWorker(custom_foolbox_model, substitute_torch_model)
-    else:
-        composite_batch_worker = None
 
     criterion = foolbox.criteria.Misclassification()
 
@@ -552,7 +521,6 @@ def substitute_model(options):
         attack_name, attack_p, composite_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_p,
-                                                                                               composite_batch_worker,
                                                                                                attack_workers, name='Substitute Model Attack')
 
     accuracy = correct_count / samples_count
@@ -592,19 +560,12 @@ def black_box_model(options):
     assuming that we do not have access to them. 
     """
     attack_name = options['attack_name']
-    attack_parallelization = options['attack_parallelization']
     attack_workers = options['attack_workers']
     command = options['command']
     custom_foolbox_model = options['custom_foolbox_model']
     loader = options['loader']
     attack_p = options['attack_p']
     results_path = options['results_path']
-    custom_torch_model = options['custom_torch_model']
-
-    if attack_parallelization:
-        custom_batch_worker = batch_attack.TorchModelWorker(custom_torch_model)
-    else:
-        custom_batch_worker = None
 
     criterion = foolbox.criteria.Misclassification()
 
@@ -613,7 +574,7 @@ def black_box_model(options):
         attack_name, attack_p, custom_foolbox_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        custom_foolbox_model, loader, attack, attack_p, custom_batch_worker, attack_workers, name='Black-Box Model Attack')
+        custom_foolbox_model, loader, attack, attack_p, attack_workers, name='Black-Box Model Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -658,7 +619,6 @@ def shallow_preprocessor(options):
     Adversarial samples are generated to fool the undefended model.
     """
     attack_p = options['attack_p']
-    attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -666,12 +626,6 @@ def shallow_preprocessor(options):
     loader = options['loader']
     results_path = options['results_path']
     preprocessor = options['preprocessor']
-    torch_model = options['torch_model']
-
-    if attack_parallelization:
-        standard_batch_worker = batch_attack.TorchModelWorker(torch_model)
-    else:
-        standard_batch_worker = None
 
     criterion = foolbox.criteria.Misclassification()
 
@@ -682,9 +636,9 @@ def shallow_preprocessor(options):
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
-    samples_count, correct_count, successful_attack_count, distances = tests.transfer_test(foolbox_model, loader, attack, attack_p,
-                                                                                                defended_model, standard_batch_worker,
-                                                                                                attack_workers, name='Shallow Preprocessor Attack')
+    samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(foolbox_model, loader, attack, attack_p,
+                                                                                                defended_model, attack_workers,
+                                                                                                name='Shallow Preprocessor Attack')
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count
@@ -721,7 +675,6 @@ def substitute_preprocessor(options):
     from the substitute model.
     """
     attack_p = options['attack_p']
-    attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -730,17 +683,11 @@ def substitute_preprocessor(options):
     results_path = options['results_path']
     preprocessor = options['preprocessor']
     substitute_foolbox_model = options['substitute_foolbox_model']
-    substitute_torch_model = options['substitute_torch_model']
 
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
     composite_model = foolbox.models.CompositeModel(defended_model, substitute_foolbox_model)
-
-    if attack_parallelization:
-        defended_batch_worker = batch_attack.CompositeModelWorker(defended_model, substitute_torch_model)
-    else:
-        defended_batch_worker = None
 
     criterion = foolbox.criteria.Misclassification()
 
@@ -749,7 +696,6 @@ def substitute_preprocessor(options):
         attack_name, attack_p, composite_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_p,
-                                                                                               defended_batch_worker,
                                                                                                attack_workers, name='Substitute Preprocessor Attack')
 
     accuracy = correct_count / samples_count
@@ -785,7 +731,6 @@ def black_box_preprocessor(options):
     Adversarial samples are generated to fool the defended model,
     which only provides the labels when queried.
     """
-    attack_parallelization = options['attack_parallelization']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -798,11 +743,6 @@ def black_box_preprocessor(options):
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
-    if attack_parallelization:
-        defended_batch_worker = batch_attack.FoolboxModelWorker(defended_model)
-    else:
-        defended_batch_worker = None
-
     criterion = foolbox.criteria.Misclassification()
 
     # The attack will be against the defended model
@@ -810,7 +750,6 @@ def black_box_preprocessor(options):
         attack_name, attack_p, defended_model, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(defended_model, loader, attack, attack_p,
-                                                                                               defended_batch_worker,
                                                                                                attack_workers, name='Black-Box Preprocessor Attack')
 
     accuracy = correct_count / samples_count
@@ -854,9 +793,6 @@ def parallelization(options):
     attack_p = options['attack_p']
     results_path = options['results_path']
     loader = options['loader']
-    torch_model = options['torch_model']
-
-    batch_worker = batch_attack.TorchModelWorker(torch_model)
 
     criterion = foolbox.criteria.Misclassification()
 
@@ -864,7 +800,7 @@ def parallelization(options):
         attack_name, attack_p, foolbox_model, criterion)
 
     samples_count, correct_count, standard_attack_count, parallel_attack_count, standard_distances, parallel_distances = tests.parallelization_test(
-        foolbox_model, loader, attack, attack_p, batch_worker, attack_workers)
+        foolbox_model, loader, attack, attack_p, attack_workers)
 
     standard_failure_count = correct_count - standard_attack_count
     parallel_failure_count = correct_count - parallel_attack_count
