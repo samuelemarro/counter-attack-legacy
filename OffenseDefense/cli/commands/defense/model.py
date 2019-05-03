@@ -32,6 +32,7 @@ def shallow_model(options):
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
+    cuda = options['cuda']
     custom_foolbox_model = options['custom_foolbox_model']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
@@ -40,11 +41,12 @@ def shallow_model(options):
     criterion = foolbox.criteria.Misclassification()
 
     # The attack will be against the undefended model
+
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, foolbox_model, criterion)
+        attack_name, attack_distance_measure, criterion)
 
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(
-        foolbox_model, loader, attack, attack_distance_measure, custom_foolbox_model, attack_workers, name='Shallow Model Attack')
+        foolbox_model, loader, attack, attack_distance_measure, custom_foolbox_model, cuda, attack_workers, name='Shallow Model Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
@@ -76,6 +78,7 @@ def substitute_model(options):
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
+    cuda = options['cuda']
     custom_foolbox_model = options['custom_foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
@@ -91,11 +94,12 @@ def substitute_model(options):
     criterion = foolbox.criteria.Misclassification()
 
     # The attack will be against the substitute model with estimated gradients
+
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, composite_model, criterion)
+        attack_name, attack_distance_measure, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_distance_measure,
-                                                                                               attack_workers, name='Substitute Model Attack')
+                                                                                               cuda, attack_workers, name='Substitute Model Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
@@ -126,6 +130,7 @@ def black_box_model(options):
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
+    cuda = options['cuda']
     custom_foolbox_model = options['custom_foolbox_model']
     loader = options['loader']
     results_path = options['results_path']
@@ -133,11 +138,12 @@ def black_box_model(options):
     criterion = foolbox.criteria.Misclassification()
 
     # The attack will be against the defended (custom) model
+
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, custom_foolbox_model, criterion)
+        attack_name, attack_distance_measure, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        custom_foolbox_model, loader, attack, attack_distance_measure, attack_workers, name='Black-Box Model Attack')
+        custom_foolbox_model, loader, attack, attack_distance_measure, cuda, attack_workers, name='Black-Box Model Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
     header = ['Distances']

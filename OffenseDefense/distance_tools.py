@@ -1,3 +1,4 @@
+import copy
 import logging
 
 from abc import ABC, abstractmethod
@@ -96,12 +97,14 @@ class AdversarialDistance(DistanceTool):
                  attack: foolbox.attacks.Attack,
                  distance_measure : DistanceMeasure,
                  failure_value: np.float,
+                 cuda: bool,
                  num_workers: int = 50,
                  name: str = None):
         self.foolbox_model = foolbox_model
         self.attack = attack
         self.distance_measure = distance_measure
         self.failure_value = failure_value
+        self.cuda = cuda
         self.num_workers = num_workers
 
         if name is None:
@@ -115,7 +118,9 @@ class AdversarialDistance(DistanceTool):
 
         label = np.argmax(predictions)
 
-        adversarial = self.attack(image, label)
+        attack = copy.copy(self.attack)
+        attack._default_model = self.foolbox_model
+        adversarial = attack(image, label)
 
         if adversarial is None:
             return self.failure_value
@@ -137,6 +142,7 @@ class AdversarialDistance(DistanceTool):
                                                            labels,
                                                            self.attack,
                                                            False,
+                                                           self.cuda,
                                                            num_workers=self.num_workers)
 
         assert len(adversarials) == len(images)

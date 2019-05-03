@@ -8,11 +8,13 @@ import numpy as np
 import foolbox
 import torch
 import torch.multiprocessing
+import multiprocessing
 
 from . import utils
 
 logger = logging.getLogger(__name__)
 
+start_method_set = False
 
 class NoPreprocessing:
     def __call__(self, x):
@@ -60,50 +62,95 @@ def sanitize_foolbox_models(obj, memo=None):
             sanitized = sanitized or sanitized_field
 
     return sanitized
-    
+
+class AttackRequest:
+    def __init__(self, image, label, index):
+        self.image = image
+        self.label = label
+        self.index = index
+
+class AttackResponse:
+    def __init__(self, adversarial, index):
+        self.adversarial = adversarial
+        self.index = index
+
+def attack_worker(input_queue, attack, model, output_queue):
+    attack._default_model = model
+
+    while True:
+        try:
+            attack_data = input_queue.get(timeout=1e-2)
+        except multiprocessing.queues.Empty:
+            return
+
+        image = attack_data.image
+        label = attack_data.label
+        index = attack_data.index
+        adversarial = attack(image, label)
+
+        response = AttackResponse(adversarial, index)
+        output_queue.put(response)
+
+        # Explicit deallocation (required for CUDA multiprocessing)
+        del attack_data.image, attack_data.label, attack_data.index
+        del attack_data
+
+        del response.adversarial, response.index
+        del response
+
+        del image, label, adversarial, index
 
 
 
-def _identity(x):
-    return x
+def run_batch_attack(foolbox_model, attack, images, labels, cuda, num_workers):
+    global start_method_set
 
-# We'll keep it for a while to simplify debugging
-class MultiprocessingCompatibleTorchModel(foolbox.models.PyTorchModel):
-    def __init__(self, model, num_classes, bounds=(0,1), channel_axis=1, device=None):
-        super().__init__(model, bounds, num_classes, channel_axis, device, preprocessing=NoPreprocessing())
-        
-    def _process_input(self, x):
-        return x, _identity
-
-def attack_worker(_data):
-    image, label, attack = _data
-
-    return attack(image, label)
-
-def run_batch_attack(foolbox_model, attack, images, labels, num_workers):
     assert len(images) == len(labels)
 
     #attack._default_model = MultiprocessingCompatibleTorchModel(foolbox_model._model, foolbox_model.num_classes(), foolbox_model.bounds(), foolbox_model.channel_axis(), 'cpu:0')
+    
+    # CUDA parallelization requires a 'spawn' start
+    # start_method_set ensures that we only set the start_method once.
 
-    sanitized = sanitize_foolbox_models(attack._default_model)
+    if cuda and not start_method_set:
+        #attack._default_model._model.share_memory()
+
+        torch.multiprocessing.set_start_method('spawn', force=True)
+        logger.debug('Enabled spawn start for torch.multiprocessing.')
+        start_method_set = True
+
+    sanitized = sanitize_foolbox_models(foolbox_model)
     if sanitized:
         logger.debug('The foolbox model contained unserializable preprocessings, which were sanitized.')
 
-    data = []
-    for image, label in zip(images, labels):
-        data.append((image, label, attack))
+    manager = torch.multiprocessing.Manager()
+    input_queue = manager.Queue()
+    output_queue = manager.Queue()
 
-    pool = torch.multiprocessing.Pool(num_workers)
-    try:
-        adversarials = pool.map(attack_worker, data)
-    except AttributeError:
-        logger.error('Parallel attacking failed. One of the possible causes is that PyTorch\'s '
-            'custom Pickler failed to serialize the Foolbox model, the images, the labels or the attack. '
-            'If so, a common reason is a Foolbox model with an unserializable preprocessing (not to be '
-            'confused with our mean/stdev preprocessing or defensive preprocessing).')
-        raise
-        
-    adversarials = list(adversarials)
+    for i, (image, label) in enumerate(zip(images, labels)):
+        attack_data = AttackRequest(image, label, i)
+        input_queue.put(attack_data)
+
+    processes = []
+    for _ in range(num_workers):
+        p = torch.multiprocessing.Process(target=attack_worker, args=(input_queue, attack, foolbox_model, output_queue))
+        p.start()
+        processes.append(p)
+
+    for p in processes:
+        p.join()
+
+    # Collect adversarials
+
+    adversarials = [None] * len(images)
+
+    while True:
+        try:
+            response = output_queue.get(timeout=1e-2)
+        except multiprocessing.queues.Empty:
+            break
+
+        adversarials[response.index] = response.adversarial
 
     assert len(adversarials) == len(images)
 
@@ -168,6 +215,7 @@ def get_adversarials(foolbox_model: foolbox.models.Model,
                      labels: np.ndarray,
                      adversarial_attack: foolbox.attacks.Attack,
                      remove_failed: bool,
+                     cuda: bool,
                      num_workers: int = 0):
     if len(images) != len(labels):
         raise ValueError('images and labels must have the same length.')
@@ -185,6 +233,7 @@ def get_adversarials(foolbox_model: foolbox.models.Model,
                                                    adversarial_attack,
                                                    _filter['images'],
                                                    _filter['image_labels'],
+                                                   cuda,
                                                    num_workers)
 
     successful_adversarial_indices = [i for i in range(

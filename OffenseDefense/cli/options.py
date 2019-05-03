@@ -376,7 +376,6 @@ def counter_attack_options(required):
         @functools.wraps(func)
         def _parse_counter_attack_options(options, counter_attack, counter_attack_workers, *args, **kwargs):
             defense_distance_measure = options['defense_distance_measure']
-            foolbox_model = options['foolbox_model']
             max_model_batch_size = options['max_model_batch_size']
 
             if counter_attack in definitions.parallelizable_attacks:
@@ -398,7 +397,7 @@ def counter_attack_options(required):
                     'counter attack workers, or disable model batch limiting.')
 
             counter_attack = parsing.parse_attack(
-                counter_attack, defense_distance_measure, foolbox_model, foolbox.criteria.Misclassification())
+                counter_attack, defense_distance_measure, foolbox.criteria.Misclassification())
 
             counter_attack_options = dict(options)
 

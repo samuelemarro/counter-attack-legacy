@@ -35,6 +35,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
+    cuda = options['cuda']
     dataset_type = options['dataset_type']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
@@ -43,7 +44,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
     criterion = foolbox.criteria.Misclassification()
 
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, foolbox_model, criterion)
+        attack_name, attack_distance_measure, criterion)
 
     save_adversarials = adversarial_dataset_path is not None
 
@@ -53,7 +54,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
                        '\'--no-test-warning\'.')
 
     samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, attack_distance_measure,
-                                                                                                                                  attack_workers, save_adversarials=save_adversarials)
+                                                                                                                                  cuda, attack_workers, save_adversarials=save_adversarials)
 
     accuracy = correct_count / samples_count
     success_rate = successful_attack_count / correct_count

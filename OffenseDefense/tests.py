@@ -47,6 +47,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
                 loader: loaders.Loader,
                 attack: foolbox.attacks.Attack,
                 distance_measure : distance_tools.DistanceMeasure,
+                cuda: bool,
                 num_workers: int = 50,
                 save_adversarials: bool = False,
                 name: str = 'Attack Test') -> Tuple[float, np.ndarray]:
@@ -71,7 +72,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
             correct_count, samples_count - correct_count))
 
         successful_adversarials, successful_images, successful_labels = batch_attack.get_adversarials(
-            foolbox_model, correct_images, correct_labels, attack, True, num_workers)
+            foolbox_model, correct_images, correct_labels, attack, True, cuda, num_workers)
 
         successful_attack_count += len(successful_adversarials)
         logger.debug('{} successful attacks ({} removed)'.format(
@@ -120,6 +121,7 @@ def shallow_rejector_test(standard_model: foolbox.models.Model,
                           attack,
                           distance_measure : distance_tools.DistanceMeasure,
                           rejector,
+                          cuda: bool,
                           num_workers: int = 50,
                           name: str = 'Shallow Rejector Attack'):
     samples_count = 0
@@ -144,7 +146,7 @@ def shallow_rejector_test(standard_model: foolbox.models.Model,
         # Third step: Generate adversarial samples against the standard model (removing failed adversarials)
         assert len(images) == len(labels)
         adversarials, images, labels = batch_attack.get_adversarials(
-            standard_model, images, labels, attack, True, num_workers)
+            standard_model, images, labels, attack, True, cuda, num_workers)
 
         # Fourth step: Remove adversarial samples that are detected as such
         batch_valid = rejector.batch_valid(adversarials)
@@ -175,6 +177,7 @@ def shallow_defense_test(standard_model: foolbox.models.Model,
                        attack,
                        distance_measure : distance_tools.DistanceMeasure,
                        defended_model: foolbox.models.Model,
+                       cuda: bool,
                        num_workers: int = 50,
                        name: str = 'Shallow Model Attack'):
 
@@ -198,7 +201,7 @@ def shallow_defense_test(standard_model: foolbox.models.Model,
         # Second step: Generate adversarial samples against the standard model (removing failed adversarials)
         assert len(images) == len(labels)
         adversarials, images, labels = batch_attack.get_adversarials(
-            standard_model, images, labels, attack, True, num_workers)
+            standard_model, images, labels, attack, True, cuda, num_workers)
 
         # Third step: Remove adversarial samples that are correctly classified by the defended model
         adversarial_predictions = defended_model.batch_predictions(
@@ -273,6 +276,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
                          loader: loaders.Loader,
                          attack: foolbox.attacks.Attack,
                          distance_measure: distance_tools.DistanceMeasure,
+                         cuda: bool,
                          num_workers: int = 50,
                          name: str = 'Parallelization Test'):
 
@@ -293,7 +297,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         # Run the parallel attack
         parallel_adversarials, parallel_images, _ = batch_attack.get_adversarials(
-            foolbox_model, correct_images, correct_labels, attack, True, num_workers=num_workers)
+            foolbox_model, correct_images, correct_labels, attack, True, cuda, num_workers=num_workers)
 
         parallel_attack_count += len(parallel_adversarials)
 
@@ -301,7 +305,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         # Run the standard attack
         standard_adversarials, standard_images, _ = batch_attack.get_adversarials(
-            foolbox_model, correct_images, correct_labels, attack, True)
+            foolbox_model, correct_images, correct_labels, attack, True, cuda)
 
         standard_attack_count += len(standard_adversarials)
 

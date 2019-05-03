@@ -34,6 +34,7 @@ def shallow_rejector(options):
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
+    cuda = options['cuda']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     rejector = options['rejector']
@@ -42,11 +43,12 @@ def shallow_rejector(options):
     criterion = foolbox.criteria.Misclassification()
 
     # The attack will be against the undefended model
+
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, foolbox_model, criterion)
+        attack_name, attack_distance_measure, criterion)
 
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_rejector_test(
-        foolbox_model, loader, attack, attack_distance_measure, rejector, attack_workers)
+        foolbox_model, loader, attack, attack_distance_measure, rejector, cuda, attack_workers)
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
@@ -96,6 +98,7 @@ def black_box_rejector(options):
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
+    cuda = options['cuda']
     foolbox_model = options['foolbox_model']
     loader = options['loader']
     rejector = options['rejector']
@@ -117,11 +120,12 @@ def black_box_rejector(options):
         foolbox.criteria.Misclassification(), rejectors.Unrejected())
 
     # The attack will be against the defended model
+    
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, defended_model, criterion)
+        attack_name, attack_distance_measure, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        defended_model, loader, attack, attack_distance_measure, attack_workers, name='Black-Box Rejector Attack')
+        defended_model, loader, attack, attack_distance_measure, cuda, attack_workers, name='Black-Box Rejector Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 

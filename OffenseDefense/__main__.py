@@ -22,6 +22,8 @@ from OffenseDefense.cli import commands
 # TODO: In parallelization, attack workers should be an argument
 # TODO: Check if rejector substitute has n+1 classes
 # TODO: "Valid class" substitute attack
+# TODO: Use lifetime processes?
+# TODO: share_memory()?
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model

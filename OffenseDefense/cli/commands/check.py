@@ -28,6 +28,7 @@ def check_parallelization(options):
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
+    cuda = options['cuda']
     foolbox_model = options['foolbox_model']
     results_path = options['results_path']
     loader = options['loader']
@@ -35,10 +36,10 @@ def check_parallelization(options):
     criterion = foolbox.criteria.Misclassification()
 
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, foolbox_model, criterion)
+        attack_name, attack_distance_measure, criterion)
 
     samples_count, correct_count, standard_attack_count, parallel_attack_count, standard_distances, parallel_distances = tests.parallelization_test(
-        foolbox_model, loader, attack, attack_distance_measure, attack_workers)
+        foolbox_model, loader, attack, attack_distance_measure, cuda, attack_workers)
 
     standard_failure_count = correct_count - standard_attack_count
     parallel_failure_count = correct_count - parallel_attack_count
