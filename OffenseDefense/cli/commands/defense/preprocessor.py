@@ -50,18 +50,7 @@ def shallow_preprocessor(options):
                                                                                                 defended_model, attack_workers,
                                                                                                 name='Shallow Preprocessor Attack')
 
-    accuracy = correct_count / samples_count
-    success_rate = successful_attack_count / correct_count
-
-    info = [
-        ['Base Accuracy', '{:2.2f}%'.format(
-            accuracy * 100.0)],
-        ['Base Attack Success Rate', '{:2.2f}%'.format(
-            success_rate * 100.0)],
-        ['Samples Count', str(samples_count)],
-        ['Correct Count', str(correct_count)],
-        ['Successful Attack Count', str(successful_attack_count)]
-    ]
+    info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
     header = ['Distances']
 
@@ -97,6 +86,11 @@ def substitute_preprocessor(options):
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
+    if substitute_foolbox_model.num_classes() != defended_model.num_classes():
+        raise click.BadArgumentUsage('The substitute model ({} classes) must have the same '
+        'number of classes as the defended model ({} classes)'.format(
+            substitute_foolbox_model.num_classes(), defended_model.num_classes()))
+
     composite_model = foolbox.models.CompositeModel(defended_model, substitute_foolbox_model)
 
     criterion = foolbox.criteria.Misclassification()
@@ -108,18 +102,7 @@ def substitute_preprocessor(options):
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_distance_measure,
                                                                                                attack_workers, name='Substitute Preprocessor Attack')
 
-    accuracy = correct_count / samples_count
-    success_rate = successful_attack_count / correct_count
-
-    info = [
-        ['Base Accuracy', '{:2.2f}%'.format(
-            accuracy * 100.0)],
-        ['Base Attack Success Rate', '{:2.2f}%'.format(
-            success_rate * 100.0)],
-        ['Samples Count', str(samples_count)],
-        ['Correct Count', str(correct_count)],
-        ['Successful Attack Count', str(successful_attack_count)]
-    ]
+    info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
     header = ['Distances']
 
@@ -162,18 +145,7 @@ def black_box_preprocessor(options):
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(defended_model, loader, attack, attack_distance_measure,
                                                                                                attack_workers, name='Black-Box Preprocessor Attack')
 
-    accuracy = correct_count / samples_count
-    success_rate = successful_attack_count / correct_count
-
-    info = [
-        ['Base Accuracy', '{:2.2f}%'.format(
-            accuracy * 100.0)],
-        ['Base Attack Success Rate', '{:2.2f}%'.format(
-            success_rate * 100.0)],
-        ['Samples Count', str(samples_count)],
-        ['Correct Count', str(correct_count)],
-        ['Successful Attack Count', str(successful_attack_count)]
-    ]
+    info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
     header = ['Distances']
 

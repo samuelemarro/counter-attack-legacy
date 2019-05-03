@@ -201,13 +201,37 @@ def distance_statistics(distances: np.ndarray, failure_count: int) -> Tuple[floa
             The adjusted median distance, which treats failures as Infinity.
     """
 
-    average_distance = np.average(distances)
-    median_distance = np.median(distances)
-    adjusted_median_distance = np.median(
-        distances + [np.Infinity] * failure_count)
+    if len(distances) == 0:
+        average_distance = np.nan
+        median_distance = np.nan
+        adjusted_median_distance = np.nan
+    else:
+        average_distance = np.average(distances)
+        median_distance = np.median(distances)
+        adjusted_median_distance = np.median(
+            distances + [np.Infinity] * failure_count)
 
     return average_distance, median_distance, adjusted_median_distance
 
+def attack_statistics_info(samples_count, correct_count, successful_attack_count, distances):
+    accuracy = correct_count / samples_count
+    success_rate = successful_attack_count / correct_count
+
+    failure_count = correct_count - successful_attack_count
+    average_distance, median_distance, adjusted_median_distance = distance_statistics(
+        distances, failure_count)
+
+    info = [['Base Accuracy', '{:2.2f}%'.format(accuracy * 100.0)],
+            ['Success Rate', '{:2.2f}%'.format(success_rate * 100.0)],
+            ['Average Distance', '{:2.2e}'.format(average_distance)],
+            ['Median Distance', '{:2.2e}'.format(median_distance)],
+            ['Adjusted Median Distance', '{:2.2e}'.format(
+                adjusted_median_distance)],
+            ['Samples Count', str(samples_count)],
+            ['Correct Count', str(correct_count)],
+            ['Successful Attack Count', str(successful_attack_count)]]
+
+    return info
 
 def save_results(path, table=None, command=None, info=None, header=None, delimiter='\t'):
     # Add the command used to the info

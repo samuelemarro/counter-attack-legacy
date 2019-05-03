@@ -20,7 +20,8 @@ from OffenseDefense.cli import commands
 # I could theoretically load a foolbox model and use it, no matter what it contains.
 # TODO: Threshold support for RandomDirectionAttack?
 # TODO: In parallelization, attack workers should be an argument
-
+# TODO: Check if rejector substitute has n+1 classes
+# TODO: "Valid class" substitute attack
 
 # IMPORTANT:
 # Shallow attacks the standard model, then it is evaluated on the defended model

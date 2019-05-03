@@ -48,24 +48,28 @@ def shallow_rejector(options):
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_rejector_test(
         foolbox_model, loader, attack, attack_distance_measure, rejector, attack_workers)
 
-    accuracy = correct_count / samples_count
-    success_rate = successful_attack_count / correct_count
-
-    info = [
-        ['Base Accuracy', '{:2.2f}%'.format(
-            accuracy * 100.0)],
-        ['Base Attack Success Rate', '{:2.2f}%'.format(
-            success_rate * 100.0)],
-        ['Samples Count', str(samples_count)],
-        ['Correct Count', str(correct_count)],
-        ['Successful Attack Count', str(successful_attack_count)]
-    ]
+    info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
     header = ['Distances']
 
     utils.save_results(results_path, table=[distances], command=command,
                        info=info, header=header)
 
+
+@rejector_defense.command(name='substitute')
+@options.global_options
+@options.dataset_options('test', 'test')
+@options.standard_model_options
+@options.pretrained_model_options
+@options.test_options('defense/rejector/substitute')
+@options.distance_tool_options
+@options.counter_attack_options(False)
+@options.detector_options
+@options.rejector_options
+@options.attack_options(definitions.supported_attacks)
+@options.substitute_options
+def substitute_rejector(options):
+    pass
 
 @rejector_defense.command(name='black-box')
 @options.global_options
@@ -119,18 +123,7 @@ def black_box_rejector(options):
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
         defended_model, loader, attack, attack_distance_measure, attack_workers, name='Black-Box Rejector Attack')
 
-    accuracy = correct_count / samples_count
-    success_rate = successful_attack_count / correct_count
-
-    info = [
-        ['Base Accuracy', '{:2.2f}%'.format(
-            accuracy * 100.0)],
-        ['Base Attack Success Rate', '{:2.2f}%'.format(
-            success_rate * 100.0)],
-        ['Samples Count', str(samples_count)],
-        ['Correct Count', str(correct_count)],
-        ['Successful Attack Count', str(successful_attack_count)]
-    ]
+    info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
     header = ['Distances']
 
