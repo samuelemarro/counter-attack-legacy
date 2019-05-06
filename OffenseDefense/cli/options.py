@@ -80,10 +80,10 @@ def standard_model_options(func):
 
         base_model = parsing.get_torch_model(dataset)
 
-        standard_model_options = dict(options)
-        standard_model_options['base_model'] = base_model
+        options = dict(options)
+        options['base_model'] = base_model
 
-        return func(standard_model_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
     return _parse_standard_model_options
 
 
@@ -138,12 +138,12 @@ def pretrained_model_options(func):
         if max_model_batch_size > 0:
             foolbox_model = model_tools.MaxBatchModel(foolbox_model, max_model_batch_size)
 
-        pretrained_model_options = dict(options)
+        options = dict(options)
 
-        pretrained_model_options['foolbox_model'] = foolbox_model
-        pretrained_model_options['torch_model'] = torch_model
+        options['foolbox_model'] = foolbox_model
+        options['torch_model'] = torch_model
 
-        return func(pretrained_model_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
     return _parse_pretrained_model_options
 
 
@@ -191,11 +191,11 @@ def custom_model_options(func):
             logger.debug('Applying model batch limiting: {}'.format(max_model_batch_size))
             custom_foolbox_model = model_tools.MaxBatchModel(custom_foolbox_model, max_model_batch_size)
 
-        custom_model_options = dict(options)
-        custom_model_options['custom_foolbox_model'] = custom_foolbox_model
-        custom_model_options['custom_torch_model'] = custom_torch_model
+        options = dict(options)
+        options['custom_foolbox_model'] = custom_foolbox_model
+        options['custom_torch_model'] = custom_torch_model
 
-        return func(custom_model_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
     return _parse_custom_model_options
 
 
@@ -240,11 +240,11 @@ def dataset_options(default_dataset, recommended=None):
             if max_batches is not None:
                 loader = loaders.MaxBatchLoader(loader, max_batches)
 
-            dataset_options = dict(options)
-            dataset_options['dataset_type'] = dataset_type
-            dataset_options['loader'] = loader
+            options = dict(options)
+            options['dataset_type'] = dataset_type
+            options['loader'] = loader
 
-            return func(dataset_options, *args, **kwargs)
+            return func(options, *args, **kwargs)
         return _parse_dataset_options
     return _dataset_options
 
@@ -271,20 +271,20 @@ def train_options(func):
             help='Enables Nesterov Accelerated Gradient. Ignored if the optimiser is not \'adam\'')
     @functools.wraps(func)
     def _parse_train_options(options, epochs, optimiser, learning_rate, weight_decay, adam_betas, adam_epsilon, adam_amsgrad, sgd_momentum, sgd_dampening, sgd_nesterov, *args, **kwargs):
-        train_options = dict(options)
+        options = dict(options)
 
-        train_options['adam_amsgrad'] = adam_amsgrad
-        train_options['adam_betas'] = adam_betas
-        train_options['adam_epsilon'] = adam_epsilon
-        train_options['epochs'] = epochs
-        train_options['learning_rate'] = learning_rate
-        train_options['optimiser_name'] = optimiser
-        train_options['sgd_dampening'] = sgd_dampening
-        train_options['sgd_momentum'] = sgd_momentum
-        train_options['sgd_nesterov'] = sgd_nesterov
-        train_options['weight_decay'] = weight_decay
+        options['adam_amsgrad'] = adam_amsgrad
+        options['adam_betas'] = adam_betas
+        options['adam_epsilon'] = adam_epsilon
+        options['epochs'] = epochs
+        options['learning_rate'] = learning_rate
+        options['optimiser_name'] = optimiser
+        options['sgd_dampening'] = sgd_dampening
+        options['sgd_momentum'] = sgd_momentum
+        options['sgd_nesterov'] = sgd_nesterov
+        options['weight_decay'] = weight_decay
 
-        return func(train_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
     return _parse_train_options
 
 
@@ -302,26 +302,17 @@ def test_options(test_name):
                 results_path = parsing.get_results_default_path(
                     test_name, dataset, start_time)
 
-            test_options = dict(options)
-            test_options['results_path'] = results_path
+            options = dict(options)
+            options['results_path'] = results_path
 
-            return func(test_options, *args, **kwargs)
+            return func(options, *args, **kwargs)
         return _parse_test_options
     return _test_options
 
 def attack_options(attacks, mandatory_parallelization=False):
-    if mandatory_parallelization:
-        _min_attack_workers = 1
-        _attack_workers_help = 'The number of parallel workers that will be used to speed up the attack.'
-    else:
-        _min_attack_workers = 0
-        _attack_workers_help = 'The number of parallel workers that will be used to speed up the attack. 0 disables parallelization.'
-
     def _attack_options(func):
         @click.argument('attack', type=click.Choice(attacks))
         @click.argument('attack_p', type=click.Choice(definitions.supported_ps))
-        @click.option('--attack-workers', default=0, show_default=True, type=click.IntRange(_min_attack_workers, None),
-                  help=_attack_workers_help)
         @functools.wraps(func)
         def _parse_attack_options(options, attack, attack_p, attack_workers, *args, **kwargs):
             attack_p = float(attack_p)
@@ -340,15 +331,24 @@ def attack_options(attacks, mandatory_parallelization=False):
 
             logger.info('Attack workers: {}.'.format(attack_workers))
 
-            attack_options = dict(options)
+            options = dict(options)
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
-            attack_options['attack_name'] = attack
-            attack_options['attack_distance_measure'] = attack_distance_measure
-            attack_options['attack_workers'] = attack_workers
+            options['attack_name'] = attack
+            options['attack_distance_measure'] = attack_distance_measure
+            options['attack_workers'] = attack_workers
 
-            return func(attack_options, *args, **kwargs)
-        return _parse_attack_options
+            return func(options, *args, **kwargs)
+
+        parse_func = _parse_attack_options
+
+        if mandatory_parallelization:
+            parse_func = click.argument('attack_workers', type=click.IntRange(1, None))(parse_func)
+        else:
+            parse_func = click.option('--attack-workers', type=click.IntRange(0, None), show_default=True,
+            help='The number of parallel workers that will be used to speed up the attack. 0 disables parallelization.')(parse_func)
+
+        return parse_func
     return _attack_options
 
 
@@ -361,11 +361,11 @@ def distance_tool_options(func):
         defense_distance_measure = parsing.distance_tools.LpDistanceMeasure(defense_p, mean)
         logger.info('Defense distance measure: {}'.format(defense_distance_measure))
 
-        distance_tool_options = dict(options)
+        options = dict(options)
 
-        distance_tool_options['defense_distance_measure'] = defense_distance_measure
+        options['defense_distance_measure'] = defense_distance_measure
 
-        return func(distance_tool_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
     return _parse_distance_tool_options
 
 
@@ -399,12 +399,12 @@ def counter_attack_options(required):
             counter_attack = parsing.parse_attack(
                 counter_attack, defense_distance_measure, foolbox.criteria.Misclassification())
 
-            counter_attack_options = dict(options)
+            options = dict(options)
 
-            counter_attack_options['counter_attack'] = counter_attack
-            counter_attack_options['counter_attack_workers'] = counter_attack_workers
+            options['counter_attack'] = counter_attack
+            options['counter_attack_workers'] = counter_attack_workers
 
-            return func(counter_attack_options, *args, **kwargs)
+            return func(options, *args, **kwargs)
 
         parse_func = _parse_counter_attack_options
         if required:
@@ -467,17 +467,17 @@ def detector_options(func):
         else:
             raise ValueError('Detector not supported.')
 
-        detector_options = dict(options)
+        options = dict(options)
 
-        detector_options['cache_size'] = cache_size
-        detector_options['detector'] = detector
-        detector_options['detector_name'] = detector_name
-        detector_options['detector_type'] = detector_type
-        detector_options['distance_tool'] = distance_tool
-        detector_options['enable_caching'] = enable_caching
-        detector_options['failure_value'] = failure_value
+        options['cache_size'] = cache_size
+        options['detector'] = detector
+        options['detector_name'] = detector_name
+        options['detector_type'] = detector_type
+        options['distance_tool'] = distance_tool
+        options['enable_caching'] = enable_caching
+        options['failure_value'] = failure_value
 
-        return func(detector_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
     return _parse_detector_options
 
 
@@ -503,12 +503,12 @@ def rejector_options(func):
         else:
             rejector = rejectors.DetectorRejector(detector, threshold)
 
-        rejector_options = dict(options)
+        options = dict(options)
 
-        rejector_options['rejector'] = rejector
-        rejector_options['threshold'] = threshold
+        options['rejector'] = rejector
+        options['threshold'] = threshold
 
-        return func(rejector_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
 
     return _parse_rejector_options
 
@@ -522,16 +522,16 @@ def preprocessor_options(func):
     @functools.wraps(func)
     def _parse_preprocessor_options(options, preprocessor, feature_squeezing_bit_depth, spatial_smoothing_window, *args, **kwargs):
 
-        preprocessor_options = dict(options)
+        options = dict(options)
 
-        preprocessor_options['feature_squeezing_bit_depth'] = feature_squeezing_bit_depth
-        preprocessor_options['spatial_smoothing_window'] = spatial_smoothing_window
+        options['feature_squeezing_bit_depth'] = feature_squeezing_bit_depth
+        options['spatial_smoothing_window'] = spatial_smoothing_window
 
         # preprocessor must be parsed last
         preprocessor = parsing.parse_preprocessor(
-            preprocessor, preprocessor_options)
-        preprocessor_options['preprocessor'] = preprocessor
-        return func(preprocessor_options, *args, **kwargs)
+            preprocessor, options)
+        options['preprocessor'] = preprocessor
+        return func(options, *args, **kwargs)
 
     return _parse_preprocessor_options
 
@@ -560,11 +560,11 @@ def adversarial_dataset_options(func):
             adversarial_loader = loaders.MaxBatchLoader(
                 adversarial_loader, max_adversarial_batches)
 
-        adversarial_dataset_options = dict(options)
-        adversarial_dataset_options['adversarial_loader'] = adversarial_loader
-        adversarial_dataset_options['adversarial_generation_success_rate'] = adversarial_generation_success_rate
+        options = dict(options)
+        options['adversarial_loader'] = adversarial_loader
+        options['adversarial_generation_success_rate'] = adversarial_generation_success_rate
 
-        return func(adversarial_dataset_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
 
     return _parse_adversarial_dataset_options
 
@@ -595,11 +595,11 @@ def substitute_options(func):
         if max_model_batch_size > 0:
             substitute_foolbox_model = model_tools.MaxBatchModel(substitute_foolbox_model, max_model_batch_size)
 
-        substitute_options = dict(options)
-        substitute_options['substitute_foolbox_model'] = substitute_foolbox_model
-        substitute_options['substitute_torch_model'] = substitute_torch_model
+        options = dict(options)
+        options['substitute_foolbox_model'] = substitute_foolbox_model
+        options['substitute_torch_model'] = substitute_torch_model
 
-        return func(substitute_options, *args, **kwargs)
+        return func(options, *args, **kwargs)
     
     return _parse_substitute_options
 
@@ -614,10 +614,10 @@ def approximation_dataset_options(defense_name):
             if approximation_dataset_path is None:
                 approximation_dataset_path = parsing.get_custom_dataset_default_path('approximation/' + defense_name, dataset, start_time)
 
-            approximation_dataset_options = dict(options)
+            options = dict(options)
 
-            approximation_dataset_options['approximation_dataset_path'] = approximation_dataset_path
+            options['approximation_dataset_path'] = approximation_dataset_path
 
-            return func(approximation_dataset_options, *args, **kwargs)
+            return func(options, *args, **kwargs)
         return _parse_approximation_dataset_options
     return _approximation_dataset_options

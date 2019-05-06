@@ -157,9 +157,11 @@ def run_batch_attack(foolbox_model, attack, images, labels, cuda, num_workers):
     return adversarials
 
 
-def run_individual_attack(attack, images, labels):
+def run_individual_attack(foolbox_model, attack, images, labels):
     assert len(images) == len(labels)
 
+    attack = copy.copy(attack)
+    attack._default_model = foolbox_model
     adversarials = []
 
     for image, label in zip(images, labels):
@@ -225,8 +227,10 @@ def get_adversarials(foolbox_model: foolbox.models.Model,
     _filter['image_labels'] = labels
 
     if num_workers == 0:
-        _filter['adversarials'] = run_individual_attack(
-            adversarial_attack, _filter['images'], _filter['image_labels'])
+        _filter['adversarials'] = run_individual_attack(foolbox_model,
+                                                        adversarial_attack,
+                                                        _filter['images'],
+                                                        _filter['image_labels'])
 
     else:
         _filter['adversarials'] = run_batch_attack(foolbox_model,
