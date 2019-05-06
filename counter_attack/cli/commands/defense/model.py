@@ -1,8 +1,8 @@
 import click
 import foolbox
 
-from OffenseDefense import tests, utils
-from OffenseDefense.cli import definitions, options, parsing
+from counter_attack import tests, utils
+from counter_attack.cli import definitions, options, parsing
 
 @click.group(name='model')
 def model_defense():

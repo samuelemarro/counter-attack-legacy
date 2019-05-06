@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-setup(name='OffenseDefense',
+setup(name='counter_attack',
       version=0.1,
       description='',
       author='Samuele Marro',

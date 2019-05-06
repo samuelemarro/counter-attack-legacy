@@ -1,5 +1,5 @@
 
-from OffenseDefense.cli.commands import \
+from counter_attack.cli.commands import \
     accuracy, approximation_dataset, attack, \
     check, defense, detector_roc, \
     train_approximator, train_model

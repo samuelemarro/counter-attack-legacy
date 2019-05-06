@@ -3,8 +3,8 @@ import logging
 import click
 import foolbox
 
-from OffenseDefense import parsing, tests, utils
-from OffenseDefense.cli import definitions, parsing, options
+from counter_attack import tests, utils
+from counter_attack.cli import definitions, parsing, options
 
 logger = logging.getLogger(__name__)
 

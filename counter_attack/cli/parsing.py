@@ -12,7 +12,7 @@ import shutil
 import torch
 import torchvision
 
-from OffenseDefense import attacks, cifar_models, distance_tools, loaders, model_tools, utils
+from counter_attack import attacks, cifar_models, distance_tools, loaders, model_tools, utils
 
 logger = logging.getLogger(__name__)
 

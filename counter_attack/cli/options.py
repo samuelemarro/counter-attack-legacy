@@ -8,8 +8,8 @@ import foolbox
 import numpy as np
 import torch
 
-from OffenseDefense import detectors, loaders, model_tools, rejectors, utils
-from OffenseDefense.cli import parsing, definitions
+from counter_attack import detectors, loaders, model_tools, rejectors, utils
+from counter_attack.cli import parsing, definitions
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def global_options(func):
 
         device = torch.cuda.current_device() if cuda else 'cpu'
 
-        logging.getLogger('OffenseDefense').setLevel(log_level.upper())
+        logging.getLogger('counter_attack').setLevel(log_level.upper())
 
         logger.info('Batch size: {}'.format(batch_size))
 

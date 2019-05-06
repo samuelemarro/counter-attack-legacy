@@ -1,7 +1,7 @@
 import click
 
-from OffenseDefense import tests, utils
-from OffenseDefense.cli import options
+from counter_attack import tests, utils
+from counter_attack.cli import options
 
 @click.command()
 @options.global_options

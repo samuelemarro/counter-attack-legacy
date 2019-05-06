@@ -3,8 +3,8 @@ import pathlib
 import click
 import torch
 
-from OffenseDefense import defenses, rejectors, training, utils
-from OffenseDefense.cli import definitions, options, parsing
+from counter_attack import defenses, rejectors, training, utils
+from counter_attack.cli import definitions, options, parsing
 
 @click.group(name='approximation-dataset')
 def approximation_dataset():

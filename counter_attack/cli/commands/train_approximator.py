@@ -3,8 +3,8 @@ import pathlib
 import click
 import torch
 
-from OffenseDefense import loaders, model_tools, training, utils
-from OffenseDefense.cli import definitions, options, parsing
+from counter_attack import loaders, model_tools, training, utils
+from counter_attack.cli import definitions, options, parsing
 
 @click.command()
 @options.global_options

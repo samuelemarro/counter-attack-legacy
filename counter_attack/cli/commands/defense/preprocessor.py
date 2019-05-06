@@ -1,8 +1,8 @@
 import click
 import foolbox
 
-from OffenseDefense import defenses, tests, utils
-from OffenseDefense.cli import definitions, options, parsing
+from counter_attack import defenses, tests, utils
+from counter_attack.cli import definitions, options, parsing
 
 @click.group(name='preprocessor')
 def preprocessor_defense():

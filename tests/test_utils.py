@@ -1,6 +1,6 @@
 import pytest
-#from context import OffenseDefense
-import OffenseDefense.utils as utils
+#from context import counter_attack
+import counter_attack.utils as utils
 import numpy as np
 
 def test_is_top_k_correct():

@@ -2,7 +2,7 @@ import click
 import logging
 import sys
 
-from OffenseDefense.cli import commands
+from counter_attack.cli import commands
 
 # TODO: Test preprocessing options
 # TODO: Allow for optional model weights?

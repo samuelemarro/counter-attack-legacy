@@ -1,8 +1,8 @@
 import click
 import foolbox
 
-from OffenseDefense import rejectors, tests, utils
-from OffenseDefense.cli import definitions, parsing, options
+from counter_attack import rejectors, tests, utils
+from counter_attack.cli import definitions, parsing, options
 
 @click.group(name='rejector')
 def rejector_defense():

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-import OffenseDefense.distance_tools as distance_tools
+import counter_attack.distance_tools as distance_tools
 
 def test_lp_distance_correct_distance():
     x = np.array([[1, 2, 3], [4, 5, 6]])

@@ -1,8 +1,8 @@
 import click
 import torch
 
-from OffenseDefense import training
-from OffenseDefense.cli import options, parsing
+from counter_attack import training
+from counter_attack.cli import options, parsing
 
 @click.command()
 @options.global_options
