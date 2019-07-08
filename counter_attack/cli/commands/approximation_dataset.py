@@ -68,7 +68,7 @@ def approximation_dataset_model(options):
 @options.dataset_options('train', 'train')
 @options.standard_model_options
 @options.pretrained_model_options
-@options.distance_tool_options
+@options.distance_options
 @options.counter_attack_options(False)
 @options.detector_options
 @options.rejector_options

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 @options.standard_model_options
 @options.pretrained_model_options
 @options.test_options('detector-roc')
-@options.distance_tool_options
+@options.distance_options
 @options.counter_attack_options(False)
 @options.detector_options
 @options.adversarial_dataset_options

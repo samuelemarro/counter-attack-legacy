@@ -13,9 +13,7 @@ from counter_attack.cli import commands
 # TODO: Sanity check: Difference between the original model and its trained approximator
 # TODO: Verify that the transfer is successful
 # TODO: Complete the substitutes
-# TODO: In pretrained_model, you are passing the model path, not the weights one
-# TODO: standard and parallel are treated completely differently, and might have different models or attacks
-# TODO: Not all rejectors use [2|inf] from distance_tool_options. Merge distance_tool with counter_attack?
+# TODO: Not all rejectors use [2|inf] from distance_options. Merge distance_tool with counter_attack?
 # TODO: preprocessor and model, from a defense point of view, are the same. The only difference is the arguments.
 # I could theoretically load a foolbox model and use it, no matter what it contains.
 # TODO: Threshold support for RandomDirectionAttack?

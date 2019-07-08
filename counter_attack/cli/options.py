@@ -8,7 +8,7 @@ import foolbox
 import numpy as np
 import torch
 
-from counter_attack import detectors, loaders, model_tools, rejectors, utils
+from counter_attack import detectors, distance_measures, loaders, model_tools, rejectors, utils
 from counter_attack.cli import parsing, definitions
 
 logger = logging.getLogger(__name__)
@@ -318,7 +318,7 @@ def attack_options(attacks, mandatory_parallelization=False):
             attack_p = float(attack_p)
 
             mean = not np.isposinf(attack_p) # Don't average L-inf
-            attack_distance_measure = parsing.distance_tools.LpDistanceMeasure(attack_p, mean)
+            attack_distance_measure = distance_measures.LpDistanceMeasure(attack_p, mean)
             logger.info('Attack distance measure: {}'.format(attack_distance_measure))
 
             if attack in definitions.parallelizable_attacks:
@@ -352,13 +352,13 @@ def attack_options(attacks, mandatory_parallelization=False):
     return _attack_options
 
 
-def distance_tool_options(func):
+def distance_options(func):
     @click.argument('defense_p', type=click.Choice(definitions.supported_ps))
     @functools.wraps(func)
-    def _parse_distance_tool_options(options, defense_p, *args, **kwargs):
+    def _parse_distance_options(options, defense_p, *args, **kwargs):
         defense_p = float(defense_p)
         mean = not np.isposinf(defense_p)
-        defense_distance_measure = parsing.distance_tools.LpDistanceMeasure(defense_p, mean)
+        defense_distance_measure = distance_measures.LpDistanceMeasure(defense_p, mean)
         logger.info('Defense distance measure: {}'.format(defense_distance_measure))
 
         options = dict(options)
@@ -366,7 +366,7 @@ def distance_tool_options(func):
         options['defense_distance_measure'] = defense_distance_measure
 
         return func(options, *args, **kwargs)
-    return _parse_distance_tool_options
+    return _parse_distance_options
 
 
 def counter_attack_options(required):

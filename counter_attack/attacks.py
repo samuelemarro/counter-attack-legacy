@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import foolbox
-from . import distance_tools, utils
+from . import distance_measures, utils
 
 
 class AttackWithParameters(foolbox.attacks.Attack):
@@ -46,7 +46,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
     def __init__(self,
                  model: foolbox.models.Model,
                  criterion: foolbox.criteria.Criterion,
-                 distance_measure : distance_tools.DistanceMeasure,
+                 distance_measure : distance_measures.DistanceMeasure,
                  directions: int,
                  search_steps: int,
                  search_epsilon: float,
@@ -63,7 +63,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         criterion : foolbox.criteria.Criterion
             The criterion that will be used. Can be overriden during the call by passing
             a foolbox.Adversarial with a different model.
-        distance_measure : distance_tools.DistanceMeasure
+        distance_measure : distance_measures.DistanceMeasure
             The distance measure that will be used to compute the distance.
         directions : int
             The number of directions that will be explored. More directions means
@@ -87,7 +87,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
             attack will use NumPy's default random module.
         """
 
-        foolbox_distance = distance_tools.FoolboxDistance(distance_measure)
+        foolbox_distance = distance_measures.FoolboxDistance(distance_measure)
         
         super().__init__(model, criterion, distance=foolbox_distance, threshold=None) # No threshold support
 
@@ -192,3 +192,51 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
     @foolbox.attacks.base.call_decorator
     def __call__(self, input_or_adv, label=None, unpack=True, **kwargs):
         self._find_closest_sample(input_or_adv)
+
+
+class ImageBlendingAttack(foolbox.attacks.Attack):
+    """
+    Uses binary search to find the closest adversarial in a straight line
+    between the image and another adversarial
+    """
+    def __init__(self, model, criterion, distance, threshold, initialization_attack = foolbox.attacks.SaltAndPepperNoiseAttack, precision=1e-5):
+        super().__init__(model, criterion, distance, threshold)
+        self.initialization_attack = initialization_attack(model, criterion, distance, threshold)
+        self.precision = precision
+
+    @foolbox.attacks.base.call_decorator
+    def __call__(self, input_or_adv, label=None, unpack=True, **kwargs):
+        
+        original_image = input_or_adv.original_image
+        other_image = self.initialization_attack(input_or_adv)
+
+        if other_image is None:
+            # The adversarial attack failed, aborting
+            return
+
+        adversarial = input_or_adv
+        del input_or_adv
+
+        # Save the other image
+        adversarial.predictions(other_image)
+
+        min_blending = 0
+        max_blending = 1
+
+        while (max_blending - min_blending) > self.precision:
+            blending = (min_blending + max_blending) / 2
+
+            image = original_image * blending + other_image * (1 - blending)
+
+            _, is_adversarial = adversarial.predictions(image)
+
+            if is_adversarial:
+                # We overshot, reduce blending
+                max_blending = blending
+            else:
+                # We undershot, increase blending
+                min_blending = blending
+
+
+
+

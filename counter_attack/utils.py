@@ -68,6 +68,28 @@ def load_zip(path):
     file.close()
     return object
 
+def lp_norm(array, p):
+    # L_infinity: Maximum difference
+    if np.isinf(p):
+        value = np.max(np.abs(array))
+        # No normalisation for L-inf
+    # L_0: Count of different values
+    elif p == 0:
+        value = np.count_nonzero(np.reshape(array, -1))
+    # L_p: p-root of the sum of diff^p
+    else:
+        value = np.power(np.sum(np.power(np.abs(array), p)), 1 / p)
+
+    return value
+
+def random_unit_vector(shape):
+    dimensions = np.prod(shape)
+
+    vector = np.random.normal(size=(dimensions))
+    magnitude = np.linalg.norm(vector)
+    unit_vector = vector / magnitude
+
+    return unit_vector.reshape(shape).astype(np.float32)
 
 def roc_curve(positive_values, negative_values):
     ground_truths = np.concatenate(

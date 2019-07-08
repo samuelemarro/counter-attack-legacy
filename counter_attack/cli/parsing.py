@@ -12,7 +12,7 @@ import shutil
 import torch
 import torchvision
 
-from counter_attack import attacks, cifar_models, distance_tools, loaders, model_tools, utils
+from counter_attack import attacks, cifar_models, distance_measures, distance_tools, loaders, model_tools, utils
 
 logger = logging.getLogger(__name__)
 
@@ -369,7 +369,7 @@ def parse_attack(attack_name, distance_measure, criterion, **attack_call_kwargs)
     else:
         raise ValueError('Attack not supported.')
 
-    foolbox_distance = distance_tools.FoolboxDistance(distance_measure)
+    foolbox_distance = distance_measures.FoolboxDistance(distance_measure)
 
     attack = attack_constructor(None, criterion, foolbox_distance)
 

@@ -19,7 +19,7 @@ def rejector_defense():
 @options.pretrained_model_options
 @options.test_options('defense/rejector/shallow')
 @options.attack_options(definitions.supported_attacks)
-@options.distance_tool_options
+@options.distance_options
 @options.counter_attack_options(False)
 @options.detector_options
 @options.rejector_options
@@ -64,7 +64,7 @@ def shallow_rejector(options):
 @options.standard_model_options
 @options.pretrained_model_options
 @options.test_options('defense/rejector/substitute')
-@options.distance_tool_options
+@options.distance_options
 @options.counter_attack_options(False)
 @options.detector_options
 @options.rejector_options
@@ -80,7 +80,7 @@ def substitute_rejector(options):
 @options.pretrained_model_options
 @options.test_options('defense/rejector/black-box')
 @options.attack_options(definitions.black_box_attacks)
-@options.distance_tool_options
+@options.distance_options
 @options.counter_attack_options(False)
 @options.detector_options
 @options.rejector_options
