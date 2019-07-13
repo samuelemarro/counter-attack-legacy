@@ -351,9 +351,9 @@ def get_num_classes(dataset):
         raise ValueError('Dataset not supported')
 
 
-def parse_attack(attack_name, distance_measure, criterion, **attack_call_kwargs):
+def parse_attack(attack_name, lp_distance, criterion, **attack_call_kwargs):
     attack_constructor = None
-    p = distance_measure.p
+    p = lp_distance.p
 
     if attack_name == 'deepfool':
         if p == 2:
@@ -369,7 +369,7 @@ def parse_attack(attack_name, distance_measure, criterion, **attack_call_kwargs)
     else:
         raise ValueError('Attack not supported.')
 
-    foolbox_distance = distance_measures.FoolboxDistance(distance_measure)
+    foolbox_distance = distance_measures.FoolboxDistance(lp_distance)
 
     attack = attack_constructor(None, criterion, foolbox_distance)
 
@@ -383,7 +383,7 @@ def parse_attack(attack_name, distance_measure, criterion, **attack_call_kwargs)
 
 def parse_distance_tool(tool_name, options, failure_value):
     cuda = options['cuda']
-    defense_distance_measure = options['defense_distance_measure']
+    defense_lp_distance = options['defense_lp_distance']
     foolbox_model = options['foolbox_model']
 
     if tool_name == 'counter-attack':
@@ -393,7 +393,7 @@ def parse_distance_tool(tool_name, options, failure_value):
         # We also use it because some attacks require the gradient.
 
         distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                            defense_distance_measure, failure_value, cuda, counter_attack_workers)
+                                                            defense_lp_distance, failure_value, cuda, counter_attack_workers)
     else:
         raise ValueError('Distance tool not supported.')
 

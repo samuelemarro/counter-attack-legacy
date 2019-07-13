@@ -28,7 +28,7 @@ def shallow_preprocessor(options):
     
     Adversarial samples are generated to fool the undefended model.
     """
-    attack_distance_measure = options['attack_distance_measure']
+    attack_lp_distance = options['attack_lp_distance']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -43,12 +43,12 @@ def shallow_preprocessor(options):
     # The attack will be against the undefended model
 
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, criterion)
+        attack_name, attack_lp_distance, criterion)
 
     defended_model = defenses.PreprocessorDefenseModel(
         foolbox_model, preprocessor)
 
-    samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(foolbox_model, loader, attack, attack_distance_measure,
+    samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(foolbox_model, loader, attack, attack_lp_distance,
                                                                                                 defended_model, cuda, attack_workers,
                                                                                                 name='Shallow Preprocessor Attack')
 
@@ -75,7 +75,7 @@ def substitute_preprocessor(options):
     BPDA uses predictions from the defended model and gradients
     from the substitute model.
     """
-    attack_distance_measure = options['attack_distance_measure']
+    attack_lp_distance = options['attack_lp_distance']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -101,9 +101,9 @@ def substitute_preprocessor(options):
     # The attack will be against the defended model with estimated gradients
     
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, criterion)
+        attack_name, attack_lp_distance, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_distance_measure,
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_lp_distance,
                                                                                                cuda, attack_workers, name='Substitute Preprocessor Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
@@ -128,7 +128,7 @@ def black_box_preprocessor(options):
     Adversarial samples are generated to fool the defended model,
     which only provides the labels when queried.
     """
-    attack_distance_measure = options['attack_distance_measure']
+    attack_lp_distance = options['attack_lp_distance']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -145,9 +145,9 @@ def black_box_preprocessor(options):
 
     # The attack will be against the defended model
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, criterion)
+        attack_name, attack_lp_distance, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(defended_model, loader, attack, attack_distance_measure,
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(defended_model, loader, attack, attack_lp_distance,
                                                                                                cuda, attack_workers, name='Black-Box Preprocessor Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)

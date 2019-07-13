@@ -46,7 +46,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
     def __init__(self,
                  model: foolbox.models.Model,
                  criterion: foolbox.criteria.Criterion,
-                 distance_measure : distance_measures.DistanceMeasure,
+                 lp_distance : distance_measures.LpDistance,
                  directions: int,
                  search_steps: int,
                  search_epsilon: float,
@@ -63,7 +63,7 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
         criterion : foolbox.criteria.Criterion
             The criterion that will be used. Can be overriden during the call by passing
             a foolbox.Adversarial with a different model.
-        distance_measure : distance_measures.DistanceMeasure
+        lp_distance : distance_measures.LpDistance
             The distance measure that will be used to compute the distance.
         directions : int
             The number of directions that will be explored. More directions means
@@ -87,11 +87,11 @@ class RandomDirectionAttack(foolbox.attacks.Attack):
             attack will use NumPy's default random module.
         """
 
-        foolbox_distance = distance_measures.FoolboxDistance(distance_measure)
+        foolbox_distance = distance_measures.FoolboxDistance(lp_distance)
         
         super().__init__(model, criterion, distance=foolbox_distance, threshold=None) # No threshold support
 
-        self.distance_measure = distance_measure
+        self.lp_distance = lp_distance
         self.directions = directions
         self.search_steps = search_steps
         self.search_epsilon = search_epsilon

@@ -31,7 +31,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
         Adjusted Median Distance: The median L_p distance of the adversarial samples from their original samples, treating failed attacks as samples with distance Infinity.
     """
 
-    attack_distance_measure = options['attack_distance_measure']
+    attack_lp_distance = options['attack_lp_distance']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -44,7 +44,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
     criterion = foolbox.criteria.Misclassification()
 
     attack = parsing.parse_attack(
-        attack_name, attack_distance_measure, criterion)
+        attack_name, attack_lp_distance, criterion)
 
     save_adversarials = adversarial_dataset_path is not None
 
@@ -53,7 +53,7 @@ def attack(options, adversarial_dataset_path, no_test_warning):
                        'to train or calibrate an adversarial detector. You can disable this warning by passing '
                        '\'--no-test-warning\'.')
 
-    samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, attack_distance_measure,
+    samples_count, correct_count, successful_attack_count, distances, adversarials, adversarial_ground_truths = tests.attack_test(foolbox_model, loader, attack, attack_lp_distance,
                                                                                                                                   cuda, attack_workers, save_adversarials=save_adversarials)
 
     accuracy = correct_count / samples_count

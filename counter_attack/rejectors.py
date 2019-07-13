@@ -34,11 +34,10 @@ class DetectorRejector(Rejector):
 #TODO: Check the cache
 
 class CacheRejector(Rejector):
-    def __init__(self, distance_tool, threshold, distance_measure, bounds, cache_size):
+    def __init__(self, distance_tool, threshold, lp_distance, cache_size):
         self.distance_tool = distance_tool
         self.threshold = threshold
-        self.distance_measure = distance_measure
-        self.bounds = bounds
+        self.lp_distance = lp_distance
         self.cache_size = cache_size
 
         self.cache = []
@@ -50,7 +49,7 @@ class CacheRejector(Rejector):
         plt.show()"""
 
         for cache_image, cache_distance in self.cache:
-            image_distance = self.distance_measure.compute(image, cache_image, False, self.bounds)
+            image_distance = self.lp_distance.compute(image, cache_image, False)
 
             """plt.title(image_distance)
             plt.imshow(np.transpose(cache_image, [1, 2, 0]))
@@ -85,7 +84,7 @@ class CacheRejector(Rejector):
 
         for i, image in enumerate(images):
             for cache_image, cache_distance in self.cache:
-                image_distance = self.distance_measure.compute(image, cache_image, False, self.bounds)
+                image_distance = self.lp_distance.compute(image, cache_image, False)
 
                 # If the cache is not valid and the image is close enough to the cache, reject
                 if image_distance < self.threshold - cache_distance and cache_distance < self.threshold:

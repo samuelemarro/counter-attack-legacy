@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def shallow_rejector_test(standard_model: foolbox.models.Model,
                           loader,
                           attack,
-                          distance_measure : distance_measures.DistanceMeasure,
+                          lp_distance : distance_measures.LpDistance,
                           rejector,
                           cuda: bool,
                           num_workers: int = 50,
@@ -49,7 +49,7 @@ def shallow_rejector_test(standard_model: foolbox.models.Model,
         successful_attack_count += len(adversarials)
 
         # Fifth step: Compute the distances
-        batch_distances = distance_measure.compute(images, adversarials, True, standard_model.bounds())
+        batch_distances = lp_distance.compute(images, adversarials, True, standard_model.bounds())
         distances += list(batch_distances)
 
         accuracy = correct_count / samples_count

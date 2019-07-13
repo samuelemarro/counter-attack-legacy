@@ -31,14 +31,14 @@ class AdversarialDistance(DistanceTool):
     def __init__(self,
                  foolbox_model: foolbox.models.Model,
                  attack: foolbox.attacks.Attack,
-                 distance_measure : distance_measures.DistanceMeasure,
+                 lp_distance : distance_measures.LpDistance,
                  failure_value: np.float,
                  cuda: bool,
                  num_workers: int = 50,
                  name: str = None):
         self.foolbox_model = foolbox_model
         self.attack = attack
-        self.distance_measure = distance_measure
+        self.lp_distance = lp_distance
         self.failure_value = failure_value
         self.cuda = cuda
         self.num_workers = num_workers
@@ -61,7 +61,7 @@ class AdversarialDistance(DistanceTool):
         if adversarial is None:
             return self.failure_value
 
-        distance = self.distance_measure.compute(adversarial, image, False, self.foolbox_model.bounds())
+        distance = self.lp_distance.compute(adversarial, image, False)
 
         logger.debug('Distance : {}'.format(distance))
 
@@ -104,7 +104,7 @@ class AdversarialDistance(DistanceTool):
         successful_adversarials = np.array(successful_adversarials)
         successful_images = np.array(successful_images)
 
-        successful_distances = self.distance_measure.compute(successful_adversarials, successful_images, True, self.foolbox_model.bounds())
+        successful_distances = self.lp_distance.compute(successful_adversarials, successful_images, True)
 
         for i, original_index in enumerate(successful_adversarial_indices):
             distances[original_index] = successful_distances[i]

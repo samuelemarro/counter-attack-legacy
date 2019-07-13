@@ -317,9 +317,8 @@ def attack_options(attacks, mandatory_parallelization=False):
         def _parse_attack_options(options, attack, attack_p, attack_workers, *args, **kwargs):
             attack_p = float(attack_p)
 
-            mean = not np.isposinf(attack_p) # Don't average L-inf
-            attack_distance_measure = distance_measures.LpDistanceMeasure(attack_p, mean)
-            logger.info('Attack distance measure: {}'.format(attack_distance_measure))
+            attack_lp_distance = distance_measures.LpDistance(attack_p)
+            logger.info('Attack Lp Distance: {}'.format(attack_lp_distance))
 
             if attack in definitions.parallelizable_attacks:
                 logger.debug('Attack supports parallelization.')
@@ -335,7 +334,7 @@ def attack_options(attacks, mandatory_parallelization=False):
 
             # We don't immediately parse 'attack' because every test needs a specific configuration
             options['attack_name'] = attack
-            options['attack_distance_measure'] = attack_distance_measure
+            options['attack_lp_distance'] = attack_lp_distance
             options['attack_workers'] = attack_workers
 
             return func(options, *args, **kwargs)
@@ -357,13 +356,13 @@ def distance_options(func):
     @functools.wraps(func)
     def _parse_distance_options(options, defense_p, *args, **kwargs):
         defense_p = float(defense_p)
-        mean = not np.isposinf(defense_p)
-        defense_distance_measure = distance_measures.LpDistanceMeasure(defense_p, mean)
-        logger.info('Defense distance measure: {}'.format(defense_distance_measure))
+        
+        defense_lp_distance = distance_measures.LpDistance(defense_p)
+        logger.info('Defense Lp Distance: {}'.format(defense_lp_distance))
 
         options = dict(options)
 
-        options['defense_distance_measure'] = defense_distance_measure
+        options['defense_lp_distance'] = defense_lp_distance
 
         return func(options, *args, **kwargs)
     return _parse_distance_options
@@ -375,7 +374,7 @@ def counter_attack_options(required):
                       help='The number of attack workers of the counter attack.')
         @functools.wraps(func)
         def _parse_counter_attack_options(options, counter_attack, counter_attack_workers, *args, **kwargs):
-            defense_distance_measure = options['defense_distance_measure']
+            defense_lp_distance = options['defense_lp_distance']
             max_model_batch_size = options['max_model_batch_size']
 
             if counter_attack in definitions.parallelizable_attacks:
@@ -397,7 +396,7 @@ def counter_attack_options(required):
                     'counter attack workers, or disable model batch limiting.')
 
             counter_attack = parsing.parse_attack(
-                counter_attack, defense_distance_measure, foolbox.criteria.Misclassification())
+                counter_attack, defense_lp_distance, foolbox.criteria.Misclassification())
 
             options = dict(options)
 
@@ -486,19 +485,18 @@ def rejector_options(func):
     @functools.wraps(func)
     def _parse_rejector_options(options, threshold, *args, **kwargs):
         cache_size = options['cache_size']
-        defense_distance_measure = options['defense_distance_measure']
+        defense_lp_distance = options['defense_lp_distance']
         detector = options['detector']
         detector_type = options['detector_type']
         distance_tool = options['distance_tool']
         enable_caching = options['enable_caching']
-        foolbox_model = options['foolbox_model']
 
         if enable_caching:
             assert detector_type == 'distance'
             assert distance_tool is not None
 
             rejector = rejectors.CacheRejector(
-                distance_tool, threshold, defense_distance_measure, foolbox_model.bounds(), cache_size)
+                distance_tool, threshold, defense_lp_distance, cache_size)
 
         else:
             rejector = rejectors.DetectorRejector(detector, threshold)
