@@ -66,7 +66,7 @@ def boundary_distance_test(foolbox_model, loader, distance_tool, max_radius, cud
 
         original_boundary_distances = distance_tool.get_distances(original_images)
         new_boundary_distances = distance_tool.get_distances(new_images)
-        original_new_distances = lp_distance.compute(original_images, new_images, True, foolbox_model.bounds())
+        original_new_distances = lp_distance.compute(original_images, new_images, True)
 
         logger.debug('Original boundary distances: {}'.format(original_boundary_distances))
         logger.debug('New boundary distances: {}'.format(new_boundary_distances))

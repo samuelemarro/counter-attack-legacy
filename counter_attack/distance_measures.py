@@ -62,7 +62,7 @@ class FoolboxDistance(foolbox.distances.Distance):
 
         def _calculate(self):
             assert self.other.shape == self.reference.shape
-            value = self.lp_distance.compute(self.other, self.reference, False, self._bounds)
+            value = self.lp_distance.compute(self.other, self.reference, False)
 
             gradient = None
             return value, gradient

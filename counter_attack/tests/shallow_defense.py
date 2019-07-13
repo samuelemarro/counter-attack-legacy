@@ -52,7 +52,7 @@ def shallow_defense_test(standard_model: foolbox.models.Model,
         successful_attack_count += len(adversarials)
 
         # Fourth step: Compute the distances
-        batch_distances = lp_distance.compute(images, adversarials, True, defended_model.bounds())
+        batch_distances = lp_distance.compute(images, adversarials, True)
         distances += list(batch_distances)
 
         accuracy = correct_count / samples_count

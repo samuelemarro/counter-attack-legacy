@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def radius_test(foolbox_model, loader, distance_tool, sampling_count, name='Radius Test'):
     lp_distance = distance_tool.lp_distance
 
-    if lp_distance not in [2, np.inf]:
+    if lp_distance != 2 and not np.isposinf(lp_distance):
         raise NotImplementedError('Radius test supports only L2 and L-Inf measures')
 
     for images, _ in test_utils.get_iterator(name, logger, loader):

@@ -47,7 +47,7 @@ def attack_test(foolbox_model: foolbox.models.Model,
         # Update the distances and/or the adversarials (if there are successful adversarials)
         if len(successful_adversarials) > 0:
             distances += list(lp_distance.compute(
-                successful_adversarials, successful_images, True, foolbox_model.bounds()))
+                successful_adversarials, successful_images, True))
 
             if save_adversarials:
                 adversarials += list(successful_adversarials)

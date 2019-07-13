@@ -36,7 +36,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         parallel_attack_count += len(parallel_adversarials)
 
-        parallel_distances += list(lp_distance.compute(parallel_adversarials, parallel_images, True, foolbox_model.bounds()))
+        parallel_distances += list(lp_distance.compute(parallel_adversarials, parallel_images, True))
 
         # Run the standard attack
         standard_adversarials, standard_images, _ = batch_attack.get_adversarials(
@@ -44,7 +44,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         standard_attack_count += len(standard_adversarials)
 
-        standard_distances += list(lp_distance.compute(standard_adversarials, standard_images, True, foolbox_model.bounds()))
+        standard_distances += list(lp_distance.compute(standard_adversarials, standard_images, True))
 
         # Compute the statistics, treating failures as samples with distance=Infinity
         standard_failure_count = correct_count - standard_attack_count
