@@ -350,6 +350,13 @@ def get_num_classes(dataset):
     else:
         raise ValueError('Dataset not supported')
 
+def parse_foolbox_distance(p):
+    if p == 2:
+        return foolbox.distances.MeanSquaredDistance
+    elif np.isinf(p):
+        return foolbox.distances.Linfinity
+    else:
+        raise NotImplementedError('Unsupported Lp.')
 
 def parse_attack(attack_name, lp_distance, criterion, **attack_call_kwargs):
     attack_constructor = None
@@ -364,12 +371,14 @@ def parse_attack(attack_name, lp_distance, criterion, **attack_call_kwargs):
             raise ValueError('Deepfool supports L-2 and L-Infinity')
     elif attack_name == 'fgsm':
         attack_constructor = foolbox.attacks.FGSM
+    elif attack_name == 'random_pgd':
+        attack_constructor = foolbox.attacks.RandomPGD
     elif attack_name == 'boundary':
         attack_constructor = foolbox.attacks.BoundaryAttack
     else:
         raise ValueError('Attack not supported.')
 
-    foolbox_distance = distance_measures.FoolboxDistance(lp_distance)
+    foolbox_distance = parse_foolbox_distance(p)
 
     attack = attack_constructor(None, criterion, foolbox_distance)
 
