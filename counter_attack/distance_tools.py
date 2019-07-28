@@ -4,7 +4,7 @@ import logging
 import foolbox
 import numpy as np
 
-from . import batch_attack, distance_measures, utils
+from . import batch_attack, utils
 
 logger = logging.getLogger(__name__)
 
@@ -31,14 +31,14 @@ class AdversarialDistance(DistanceTool):
     def __init__(self,
                  foolbox_model: foolbox.models.Model,
                  attack: foolbox.attacks.Attack,
-                 lp_distance : distance_measures.LpDistance,
+                 p : float,
                  failure_value: np.float,
                  cuda: bool,
                  num_workers: int = 50,
                  name: str = None):
         self.foolbox_model = foolbox_model
         self.attack = attack
-        self.lp_distance = lp_distance
+        self.p = p
         self.failure_value = failure_value
         self.cuda = cuda
         self.num_workers = num_workers
@@ -61,7 +61,7 @@ class AdversarialDistance(DistanceTool):
         if adversarial is None:
             return self.failure_value
 
-        distance = self.lp_distance.compute(adversarial, image, False)
+        distance = utils.lp_distance(adversarial, image, self.p, False)
 
         logger.debug('Distance : {}'.format(distance))
 
@@ -104,7 +104,7 @@ class AdversarialDistance(DistanceTool):
         successful_adversarials = np.array(successful_adversarials)
         successful_images = np.array(successful_images)
 
-        successful_distances = self.lp_distance.compute(successful_adversarials, successful_images, True)
+        successful_distances = utils.lp_distance(successful_adversarials, successful_images, self.p, True)
 
         for i, original_index in enumerate(successful_adversarial_indices):
             distances[original_index] = successful_distances[i]

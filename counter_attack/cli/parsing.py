@@ -12,7 +12,7 @@ import shutil
 import torch
 import torchvision
 
-from counter_attack import attacks, cifar_models, distance_measures, distance_tools, loaders, model_tools, utils
+from counter_attack import attacks, cifar_models, distance_tools, loaders, model_tools, utils
 
 logger = logging.getLogger(__name__)
 
@@ -350,17 +350,9 @@ def get_num_classes(dataset):
     else:
         raise ValueError('Dataset not supported')
 
-def parse_foolbox_distance(p):
-    if p == 2:
-        return foolbox.distances.MeanSquaredDistance
-    elif np.isinf(p):
-        return foolbox.distances.Linfinity
-    else:
-        raise NotImplementedError('Unsupported Lp.')
 
-def parse_attack(attack_name, lp_distance, criterion, **attack_call_kwargs):
+def parse_attack(attack_name, p, criterion, **attack_call_kwargs):
     attack_constructor = None
-    p = lp_distance.p
 
     if attack_name == 'deepfool':
         if p == 2:
@@ -378,7 +370,7 @@ def parse_attack(attack_name, lp_distance, criterion, **attack_call_kwargs):
     else:
         raise ValueError('Attack not supported.')
 
-    foolbox_distance = parse_foolbox_distance(p)
+    foolbox_distance = utils.p_to_foolbox(p)
 
     attack = attack_constructor(None, criterion, foolbox_distance)
 
@@ -392,7 +384,7 @@ def parse_attack(attack_name, lp_distance, criterion, **attack_call_kwargs):
 
 def parse_distance_tool(tool_name, options, failure_value):
     cuda = options['cuda']
-    defense_lp_distance = options['defense_lp_distance']
+    defense_p = options['defense_p']
     foolbox_model = options['foolbox_model']
 
     if tool_name == 'counter-attack':
@@ -402,7 +394,7 @@ def parse_distance_tool(tool_name, options, failure_value):
         # We also use it because some attacks require the gradient.
 
         distance_tool = distance_tools.AdversarialDistance(foolbox_model, counter_attack,
-                                                            defense_lp_distance, failure_value, cuda, counter_attack_workers)
+                                                            defense_p, failure_value, cuda, counter_attack_workers)
     else:
         raise ValueError('Distance tool not supported.')
 

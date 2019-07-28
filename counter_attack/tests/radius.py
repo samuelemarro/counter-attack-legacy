@@ -2,14 +2,13 @@ import logging
 
 import numpy as np
 
-from counter_attack import distance_measures, utils
+from counter_attack import utils
 from counter_attack.tests import test_utils
 
 logger = logging.getLogger(__name__)
 
 def radius_test(foolbox_model, loader, distance_tool, sampling_count, name='Radius Test'):
-    lp_distance = distance_tool.lp_distance
-    p = lp_distance.p
+    p = distance_tool.p
 
     if p != 2 and not np.isposinf(p):
         raise NotImplementedError('Radius test supports only L2 and L-Inf measures')

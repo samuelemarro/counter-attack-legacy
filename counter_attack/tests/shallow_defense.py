@@ -3,7 +3,7 @@ import logging
 import foolbox
 import numpy as np
 
-from counter_attack import batch_attack, distance_measures
+from counter_attack import batch_attack, utils
 from counter_attack.tests import test_utils
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def shallow_defense_test(standard_model: foolbox.models.Model,
                        loader,
                        attack,
-                       lp_distance : distance_measures.LpDistance,
+                       p : float,
                        defended_model: foolbox.models.Model,
                        cuda: bool,
                        num_workers: int = 50,
@@ -52,7 +52,7 @@ def shallow_defense_test(standard_model: foolbox.models.Model,
         successful_attack_count += len(adversarials)
 
         # Fourth step: Compute the distances
-        batch_distances = lp_distance.compute(images, adversarials, True)
+        batch_distances = utils.lp_distance(images, adversarials, p, True)
         distances += list(batch_distances)
 
         accuracy = correct_count / samples_count

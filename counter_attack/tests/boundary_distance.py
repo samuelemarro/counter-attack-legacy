@@ -3,25 +3,25 @@ import logging
 import foolbox
 import numpy as np
 
-from counter_attack import attacks, batch_attack, distance_measures, utils
+from counter_attack import attacks, batch_attack, utils
 from counter_attack.tests import test_utils
 
 logger = logging.getLogger(__name__)
 
 # Also known as Consistency Test
 def boundary_distance_test(foolbox_model, loader, distance_tool, max_radius, cuda, num_workers, name='Boundary Distance Test'):
-    lp_distance = distance_tool.lp_distance
+    p = distance_tool.p
 
     # This attack uses binary search to find samples on the boundary
-    foolbox_distance = distance_measures.FoolboxDistance(lp_distance)
+    foolbox_distance = utils.p_to_foolbox(p)
 
     initialization_attack = None
 
     # If possible, use DeepFool to generate the starting points
     if isinstance(foolbox_model, foolbox.models.DifferentiableModel):
-        if lp_distance.p == 2:
+        if p == 2:
             initialization_attack = foolbox.attacks.DeepFoolL2Attack
-        elif np.isposinf(lp_distance.p):
+        elif np.isposinf(p):
             initialization_attack = foolbox.attacks.DeepFoolLinfinityAttack
 
     # Otherwise, use Salt and Pepper
@@ -49,7 +49,6 @@ def boundary_distance_test(foolbox_model, loader, distance_tool, max_radius, cud
             continue
 
         movements = []
-        p = lp_distance.p
         shape = original_images[0].shape
         
         for _ in original_images:
@@ -66,7 +65,7 @@ def boundary_distance_test(foolbox_model, loader, distance_tool, max_radius, cud
 
         original_boundary_distances = distance_tool.get_distances(original_images)
         new_boundary_distances = distance_tool.get_distances(new_images)
-        original_new_distances = lp_distance.compute(original_images, new_images, True)
+        original_new_distances = utils.lp_distance(original_images, new_images, p, True)
 
         logger.debug('Original boundary distances: {}'.format(original_boundary_distances))
         logger.debug('New boundary distances: {}'.format(new_boundary_distances))

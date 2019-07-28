@@ -24,7 +24,7 @@ def check_parallelization(options):
     affect the results.
     """
 
-    attack_lp_distance = options['attack_lp_distance']
+    attack_p = options['attack_p']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -36,10 +36,10 @@ def check_parallelization(options):
     criterion = foolbox.criteria.Misclassification()
 
     attack = parsing.parse_attack(
-        attack_name, attack_lp_distance, criterion)
+        attack_name, attack_p, criterion)
 
     samples_count, correct_count, standard_attack_count, parallel_attack_count, standard_distances, parallel_distances = tests.parallelization_test(
-        foolbox_model, loader, attack, attack_lp_distance, cuda, attack_workers)
+        foolbox_model, loader, attack, attack_p, cuda, attack_workers)
 
     standard_failure_count = correct_count - standard_attack_count
     parallel_failure_count = correct_count - parallel_attack_count

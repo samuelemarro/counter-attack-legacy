@@ -28,7 +28,7 @@ def shallow_model(options):
     
     Adversarial samples are generated to fool the standard model.
     """
-    attack_lp_distance = options['attack_lp_distance']
+    attack_p = options['attack_p']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -43,10 +43,10 @@ def shallow_model(options):
     # The attack will be against the undefended model
 
     attack = parsing.parse_attack(
-        attack_name, attack_lp_distance, criterion)
+        attack_name, attack_p, criterion)
 
     samples_count, correct_count, successful_attack_count, distances = tests.shallow_defense_test(
-        foolbox_model, loader, attack, attack_lp_distance, custom_foolbox_model, cuda, attack_workers, name='Shallow Model Attack')
+        foolbox_model, loader, attack, attack_p, custom_foolbox_model, cuda, attack_workers, name='Shallow Model Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
 
@@ -74,7 +74,7 @@ def substitute_model(options):
     since most models support gradient computation, but we are
     assuming that we do not have access to the gradients. 
     """
-    attack_lp_distance = options['attack_lp_distance']
+    attack_p = options['attack_p']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -96,9 +96,9 @@ def substitute_model(options):
     # The attack will be against the substitute model with estimated gradients
 
     attack = parsing.parse_attack(
-        attack_name, attack_lp_distance, criterion)
+        attack_name, attack_p, criterion)
 
-    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_lp_distance,
+    samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(composite_model, loader, attack, attack_p,
                                                                                                cuda, attack_workers, name='Substitute Model Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
@@ -126,7 +126,7 @@ def black_box_model(options):
     since most models support gradient computation, but we are
     assuming that we do not have access to them. 
     """
-    attack_lp_distance = options['attack_lp_distance']
+    attack_p = options['attack_p']
     attack_name = options['attack_name']
     attack_workers = options['attack_workers']
     command = options['command']
@@ -140,10 +140,10 @@ def black_box_model(options):
     # The attack will be against the defended (custom) model
 
     attack = parsing.parse_attack(
-        attack_name, attack_lp_distance, criterion)
+        attack_name, attack_p, criterion)
 
     samples_count, correct_count, successful_attack_count, distances, _, _ = tests.attack_test(
-        custom_foolbox_model, loader, attack, attack_lp_distance, cuda, attack_workers, name='Black-Box Model Attack')
+        custom_foolbox_model, loader, attack, attack_p, cuda, attack_workers, name='Black-Box Model Attack')
 
     info = utils.attack_statistics_info(samples_count, correct_count, successful_attack_count, distances)
     header = ['Distances']

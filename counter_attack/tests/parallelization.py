@@ -2,7 +2,7 @@ import logging
 
 import foolbox
 
-from counter_attack import batch_attack, distance_measures, loaders, utils
+from counter_attack import batch_attack, loaders, utils
 from counter_attack.tests import test_utils
 
 logger = logging.getLogger(__name__)
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 def parallelization_test(foolbox_model: foolbox.models.Model,
                          loader: loaders.Loader,
                          attack: foolbox.attacks.Attack,
-                         lp_distance: distance_measures.LpDistance,
+                         p: float,
                          cuda: bool,
                          num_workers: int = 50,
                          name: str = 'Parallelization Test'):
@@ -36,7 +36,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         parallel_attack_count += len(parallel_adversarials)
 
-        parallel_distances += list(lp_distance.compute(parallel_adversarials, parallel_images, True))
+        parallel_distances += list(utils.lp_distance(parallel_adversarials, parallel_images, p, True))
 
         # Run the standard attack
         standard_adversarials, standard_images, _ = batch_attack.get_adversarials(
@@ -44,7 +44,7 @@ def parallelization_test(foolbox_model: foolbox.models.Model,
 
         standard_attack_count += len(standard_adversarials)
 
-        standard_distances += list(lp_distance.compute(standard_adversarials, standard_images, True))
+        standard_distances += list(utils.lp_distance(standard_adversarials, standard_images, p, True))
 
         # Compute the statistics, treating failures as samples with distance=Infinity
         standard_failure_count = correct_count - standard_attack_count

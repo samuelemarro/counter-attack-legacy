@@ -11,6 +11,7 @@ import pickle
 import urllib.request
 from typing import Tuple
 
+import foolbox
 import numpy as np
 import sklearn.metrics as metrics
 
@@ -81,6 +82,19 @@ def lp_norm(array, p):
         value = np.power(np.sum(np.power(np.abs(array), p)), 1 / p)
 
     return value
+
+def lp_distance(x, y, p, batch):
+    # If x or y are empty, we return an empty array
+    empty_x = hasattr(x, '__len__') and len(x) == 0
+    empty_y = hasattr(y, '__len__') and len(y) == 0
+
+    if batch and (empty_x or empty_y):
+        return np.array([], dtype=np.float)
+
+    if batch:
+        return np.array([lp_norm(_x - _y, p) for _x, _y in zip(x, y)])
+    else:
+        return lp_norm(x - y, p)
 
 def random_unit_vector(shape):
     dimensions = np.prod(shape)
@@ -324,6 +338,13 @@ def load_json(path):
         data = json.load(f)
     return data
 
+def p_to_foolbox(p):
+    if p == 2:
+        return foolbox.distances.MeanSquaredDistance
+    elif np.isinf(p):
+        return foolbox.distances.Linfinity
+    else:
+        raise NotImplementedError('Unsupported Lp.')
 
 class Filter(dict):
     def __init__(self, o=None, **kwArgs):

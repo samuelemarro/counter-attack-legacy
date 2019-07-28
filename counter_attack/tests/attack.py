@@ -4,7 +4,7 @@ from typing import Tuple
 import foolbox
 import numpy as np
 
-from counter_attack import batch_attack, distance_measures, loaders, utils
+from counter_attack import batch_attack, loaders, utils
 from counter_attack.tests import test_utils
 
 logger = logging.getLogger(__name__)
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 def attack_test(foolbox_model: foolbox.models.Model,
                 loader: loaders.Loader,
                 attack: foolbox.attacks.Attack,
-                lp_distance : distance_measures.LpDistance,
+                p : float,
                 cuda: bool,
                 num_workers: int = 50,
                 save_adversarials: bool = False,
@@ -46,8 +46,8 @@ def attack_test(foolbox_model: foolbox.models.Model,
 
         # Update the distances and/or the adversarials (if there are successful adversarials)
         if len(successful_adversarials) > 0:
-            distances += list(lp_distance.compute(
-                successful_adversarials, successful_images, True))
+            distances += list(utils.lp_distance(
+                successful_adversarials, successful_images, p, True))
 
             if save_adversarials:
                 adversarials += list(successful_adversarials)
