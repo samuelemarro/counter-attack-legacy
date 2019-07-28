@@ -364,7 +364,17 @@ def parse_attack(attack_name, p, criterion, **attack_call_kwargs):
     elif attack_name == 'fgsm':
         attack_constructor = foolbox.attacks.FGSM
     elif attack_name == 'random_pgd':
-        attack_constructor = foolbox.attacks.RandomPGD
+        if not np.isposinf(p):
+            attack_constructor = foolbox.attacks.RandomPGD
+        else:
+            raise ValueError('Random PGD only supports L-Infinity.')
+    elif attack_name == 'bim':
+        if p == 2:
+            attack_constructor = foolbox.attacks.L2BasicIterativeAttack
+        elif np.isposinf(p):
+            attack_constructor = foolbox.attacks.LinfinityBasicIterativeAttack
+        else:
+            raise ValueError('Basic Iterative Method supports L-2 and L-Infinity')
     elif attack_name == 'boundary':
         attack_constructor = foolbox.attacks.BoundaryAttack
     else:

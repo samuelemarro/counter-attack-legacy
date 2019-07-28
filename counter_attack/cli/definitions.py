@@ -5,7 +5,7 @@ default_architecture_names = {
 }
 
 datasets = ['cifar10', 'cifar100', 'imagenet']
-differentiable_attacks = ['deepfool', 'fgsm', 'random_pgd']
+differentiable_attacks = ['bim', 'deepfool', 'fgsm', 'random_pgd']
 black_box_attacks = ['boundary']
 supported_attacks = differentiable_attacks + black_box_attacks
 
