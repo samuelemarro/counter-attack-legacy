@@ -20,6 +20,7 @@ def radius_test(foolbox_model, loader, distance_tool, sampling_count, name='Radi
     failures = 0
 
     for images, _ in test_utils.get_iterator(name, logger, loader):
+        # Use the predicted labels, not the true ones
         predicted_labels = np.argmax(foolbox_model.batch_predictions(images), axis=-1)
         estimated_distances = distance_tool.get_distances(images)
 

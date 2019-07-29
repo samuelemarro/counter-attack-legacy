@@ -1,6 +1,7 @@
 
 from counter_attack.cli.commands import \
-    accuracy, approximation_dataset, attack, \
+    accuracy, adversarial_perturbation, \
+    approximation_dataset, attack, \
     boundary_distance, \
     check, defense, detector_roc, \
     radius, \
@@ -8,6 +9,7 @@ from counter_attack.cli.commands import \
 
 commands = [
     accuracy.accuracy,
+    adversarial_perturbation.adversarial_perturbation,
     approximation_dataset.approximation_dataset,
     attack.attack,
     boundary_distance.boundary_distance,

@@ -35,7 +35,10 @@ def boundary_distance_test(foolbox_model, loader, distance_tool, max_radius, cud
     failure_count = 0
     inconsistent_differences = []
 
-    for images, labels in test_utils.get_iterator(name, logger, loader):
+    for images, _ in test_utils.get_iterator(name, logger, loader):
+        # Use the predicted labels, not the real ones
+        labels = np.argmax(foolbox_model.batch_predictions(images), axis=-1)
+
         # Find samples exactly on the boundary
         # These will be the original images
         adversarials, images, labels = batch_attack.get_adversarials(foolbox_model, images, labels, attack, True, cuda, num_workers)

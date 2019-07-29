@@ -343,7 +343,7 @@ def attack_options(attacks, mandatory_parallelization=False):
         if mandatory_parallelization:
             parse_func = click.argument('attack_workers', type=click.IntRange(1, None))(parse_func)
         else:
-            parse_func = click.option('--attack-workers', type=click.IntRange(0, None), show_default=True,
+            parse_func = click.option('--attack-workers', type=click.IntRange(0, None), default=0, show_default=True,
             help='The number of parallel workers that will be used to speed up the attack. 0 disables parallelization.')(parse_func)
 
         return parse_func
